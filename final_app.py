@@ -18,98 +18,116 @@ st.set_page_config(
 # ── Load everything ───────────────────────────────
 @st.cache_resource
 def load_all():
-    with open('model.pkl', 'rb') as f:
-        game_model = pickle.load(f)
-    with open('elo_ratings.pkl', 'rb') as f:
-        elo = pickle.load(f)
-    with open('pass_yards_model.pkl', 'rb') as f:
-        pass_model = pickle.load(f)
-    with open('rush_yards_model.pkl', 'rb') as f:
-        rush_model = pickle.load(f)
-    with open('rec_yards_model.pkl', 'rb') as f:
-        rec_model = pickle.load(f)
-    with open('player_lookup.pkl', 'rb') as f:
-        players = pickle.load(f)
-    return game_model, elo, pass_model, rush_model, rec_model, players
+    try:
+        with open('model.pkl', 'rb') as f:
+            game_model = pickle.load(f)
+        with open('elo_ratings.pkl', 'rb') as f:
+            elo = pickle.load(f)
+        with open('pass_yards_model.pkl', 'rb') as f:
+            pass_model = pickle.load(f)
+        with open('rush_yards_model.pkl', 'rb') as f:
+            rush_model = pickle.load(f)
+        with open('rec_yards_model.pkl', 'rb') as f:
+            rec_model = pickle.load(f)
+        with open('player_lookup.pkl', 'rb') as f:
+            players = pickle.load(f)
+        return game_model, elo, pass_model, rush_model, rec_model, players
+    except Exception as e:
+        st.info("🔄 First launch: building models (takes ~2 min)...")
+        return rebuild_models()
 
-@st.cache_data
-def load_data():
-    games     = pd.read_csv('games_processed.csv')
+def rebuild_models():
+    import nfl_data_py as nfl
+    from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+    from sklearn.model_selection import train_test_split
+
+    # ── Game model ────────────────────────────────
+    games = pd.read_csv('games_processed.csv')
+    games = games[games['game_type'] == 'REG'].copy()
+    games = games.dropna(subset=['home_score','away_score'])
+    games = games.sort_values('gameday').reset_index(drop=True)
+    games['temp']     = games['temp'].fillna(games['temp'].median())
+    games['wind']     = games['wind'].fillna(0)
+    games['is_dome']  = (games['roof'] == 'dome').astype(int)
+    games['is_grass'] = (games['surface'].str.contains('grass', na=False)).astype(int)
+    games['home_win'] = (games['home_score'] > games['away_score']).astype(int)
+
+    feature_cols = ['elo_diff','spread_line','home_rest','away_rest',
+                    'temp','wind','is_dome','is_grass','div_game']
+    model_data = games[feature_cols + ['home_win']].dropna()
+    X = model_data[feature_cols]
+    y = model_data['home_win']
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, shuffle=False)
+    game_model = GradientBoostingClassifier(
+        n_estimators=200, learning_rate=0.05,
+        max_depth=4, random_state=42)
+    game_model.fit(X_train, y_train)
+
+    # ── ELO ratings ───────────────────────────────
+    elo = {}
+    K = 20
+    def get_elo_local(team):
+        return elo.get(team, 1500)
+    def update_elo_local(winner, loser):
+        ew = get_elo_local(winner)
+        el = get_elo_local(loser)
+        exp = 1 / (1 + 10 ** ((el - ew) / 400))
+        elo[winner] = ew + K * (1 - exp)
+        elo[loser]  = el + K * (0 - (1 - exp))
+    for _, game in games.iterrows():
+        if game['home_score'] > game['away_score']:
+            update_elo_local(game['home_team'], game['away_team'])
+        elif game['away_score'] > game['home_score']:
+            update_elo_local(game['away_team'], game['home_team'])
+
+    # ── Player models ─────────────────────────────
     passing   = pd.read_csv('passing_stats.csv')
     rushing   = pd.read_csv('rushing_stats.csv')
     receiving = pd.read_csv('receiving_stats.csv')
-    lineup_df = pd.read_csv('lineup_summary.csv')
-    return games, passing, rushing, receiving, lineup_df
 
-game_model, elo_ratings, pass_model, rush_model, \
-    rec_model, player_lookup = load_all()
-games, passing, rushing, receiving, lineup_df = load_data()
+    def train_reg(df, target, features):
+        d = df[features + [target]].dropna()
+        X2 = d[features]
+        y2 = d[target]
+        Xtr, Xte, ytr, yte = train_test_split(
+            X2, y2, test_size=0.2, random_state=42, shuffle=False)
+        m = GradientBoostingRegressor(
+            n_estimators=200, learning_rate=0.05,
+            max_depth=4, random_state=42)
+        m.fit(Xtr, ytr)
+        return m
 
-NFL_TEAMS = sorted([
-    'ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE',
-    'DAL','DEN','DET','GB', 'HOU','IND','JAX','KC',
-    'LA', 'LAC','LV', 'MIA','MIN','NE', 'NO', 'NYG',
-    'NYJ','PHI','PIT','SEA','SF', 'TB', 'TEN','WAS'
-])
+    pass_model = train_reg(passing, 'pass_yards',
+        ['avg_pass_yards_l4','avg_pass_attempts_l4','avg_completions_l4',
+         'avg_pass_tds_l4','temp','wind','is_dome','is_home','spread_line'])
+    rush_model = train_reg(rushing, 'rush_yards',
+        ['avg_rush_yards_l4','avg_rush_attempts_l4','avg_rush_tds_l4',
+         'temp','wind','is_dome','is_home','spread_line'])
+    rec_model = train_reg(receiving, 'rec_yards',
+        ['avg_rec_yards_l4','avg_targets_l4','avg_receptions_l4',
+         'avg_rec_tds_l4','temp','wind','is_dome','is_home','spread_line'])
 
-# ── Helpers ───────────────────────────────────────
-def get_elo(team):
-    return elo_ratings.get(team, 1500)
+    # ── Player lookup ─────────────────────────────
+    try:
+        with open('player_lookup.pkl', 'rb') as f:
+            players = pickle.load(f)
+    except:
+        players = {}
 
-def elo_win_prob(elo_a, elo_b):
-    return 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
+    # Save fresh copies
+    with open('model.pkl', 'wb') as f:
+        pickle.dump(game_model, f)
+    with open('elo_ratings.pkl', 'wb') as f:
+        pickle.dump(elo, f)
+    with open('pass_yards_model.pkl', 'wb') as f:
+        pickle.dump(pass_model, f)
+    with open('rush_yards_model.pkl', 'wb') as f:
+        pickle.dump(rush_model, f)
+    with open('rec_yards_model.pkl', 'wb') as f:
+        pickle.dump(rec_model, f)
 
-def get_starters(team):
-    """Get default starters for a team from player lookup"""
-    result = {}
-    for pos in ['QB','RB','WR','TE']:
-        players = player_lookup.get(team, {}).get(pos, [])
-        result[pos] = players[0]['name'] if players else 'Unknown'
-        result[f'{pos}_list'] = [p['name'] for p in players] if players else ['Unknown']
-        result[f'{pos}_score'] = players[0]['score'] if players else 50.0
-    return result
-
-def calc_lineup_score(team, qb, rb, wr, te):
-    """
-    Calculate offensive strength score for a given lineup.
-    Looks up each player's individual score and weights by position.
-    """
-    def find_score(pos, name):
-        for p in player_lookup.get(team, {}).get(pos, []):
-            if p['name'] == name:
-                return p['score']
-        return 50.0  # Default if player not found
-
-    qb_s = find_score('QB', qb)
-    rb_s = find_score('RB', rb)
-    wr_s = find_score('WR', wr)
-    te_s = find_score('TE', te)
-
-    # Weighted offensive score
-    score = qb_s*0.40 + wr_s*0.25 + rb_s*0.20 + te_s*0.15
-    return score, qb_s, rb_s, wr_s, te_s
-
-def lineup_adjustment(home_score, away_score):
-    """
-    Convert lineup scores into a win probability adjustment.
-    A stronger lineup shifts the prediction in their favor.
-    Difference of 10 points ~ 5% swing in win probability.
-    """
-    diff = home_score - away_score
-    adjustment = diff * 0.005  # Scale factor
-    return adjustment
-
-def get_player_recent(df, name_col, name, stat_cols, n=4):
-    """Get player's rolling average from last n games"""
-    rows = df[df[name_col] == name].sort_values(['season','week']).tail(n)
-    if len(rows) == 0:
-        return None
-    result = {}
-    for col in stat_cols:
-        avg_col = f'avg_{col}_l4'
-        if avg_col in rows.columns:
-            result[avg_col] = rows[avg_col].iloc[-1]
-    return result
+    return game_model, elo, pass_model, rush_model, rec_model, players
 
 # ── Header ────────────────────────────────────────
 st.title("🏈 NFL Predictor Pro")
