@@ -131,7 +131,7 @@ def load_data():
 game_model, elo_ratings, pass_model, rush_model, rec_model, player_lookup = load_all()
 games, passing, rushing, receiving, lineup_df = load_data()
 
-# ── Helpers ───────────────────────────────────────
+# ── Helpers (defined after load so elo_ratings exists) ────────────
 def get_elo(team):
     return elo_ratings.get(team, 1500)
 
