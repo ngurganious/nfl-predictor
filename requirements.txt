@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+scikit-learn
+nfl-data-py
+plotly
+requests
+pyarrow
