@@ -1,0 +1,14 @@
+streamlit
+pandas
+numpy
+scikit-learn
+nfl-data-py
+plotly
+requests
+pyarrow
+scipy
+pytz
+# API integration layer
+python-dotenv
+beautifulsoup4
+lxml

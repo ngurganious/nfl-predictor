@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+.venv/
+
+# API keys — NEVER commit these
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# API response cache
+cache/
+
+# Claude Code workspace files
+.claude/
+
+# Logs
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db

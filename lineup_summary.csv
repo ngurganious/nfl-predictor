@@ -1,0 +1,33 @@
+team,offense_score,qb_score,rb_score,wr_score,te_score,qb_name,rb_name,wr1_name,wr2_name,wr3_name,te_name
+BAL,48.3,46.1,33.85,46.285714285714285,76.76666666666667,Lamar Jackson,Derrick Henry,Xavien Flowers,Rashod Bateman,Nelson Agholor,Mark Andrews
+TB,47.5,39.85,47.5,57.7125,50.63333333333333,Baker Mayfield,Rachaad White,Sterling Shepard,Jalen McMillan,Mike Evans,Cade Otton
+GB,47.3,42.05,32.55,76.93333333333332,31.275000000000002,Jordan Love,Joshua Jacobs,Christian Watson,Jayden Reed,Romeo Doubs,Tucker Kraft
+DET,47.2,43.75,61.86666666666667,46.371428571428574,38.449999999999996,Jared Goff,David Montgomery,Jameson Williams,Tim Patrick,Amon-Ra St. Brown,Sam LaPorta
+LA,44.5,40.86666666666667,26.175,70.07142857142858,35.849999999999994,John Stafford,Kyren Williams,Puka Nacua,Cooper Kupp,Demarcus Robinson,Tyler Higbee
+BUF,44.4,27.866666666666664,43.1,72.35714285714286,43.4,Joshua Allen,James Cook,Keon Coleman,Khalil Shakir,Mack Hollins,Dalton Kincaid
+ATL,43.6,38.05,41.26666666666667,57.53333333333333,38.13333333333333,Michael Penix,Bijan Robinson,Darnell Mooney,Drake London,Ray-Ray McCloud,Charlie Woerner
+PHI,43.1,43.6,40.36666666666667,47.557142857142864,37.82,Jalen Hurts,Saquon Barkley,Jahan Dotson,DeVonta Smith,Arthur Brown,Dallas Goedert
+NYJ,41.0,47.8,23.525,53.01428571428572,26.22,Aaron Rodgers,Breece Hall,Allen Lazard,Garrett Wilson,Davante Adams,Tyler Conklin
+WAS,41.0,26.55,40.025000000000006,61.81428571428571,46.333333333333336,Jayden Daniels,Brian Robinson,Terry McLaurin,Luke McCaffrey,Dyami Brown,Zachary Ertz
+CIN,40.9,44.2,27.175,40.25,51.6,Joe Burrow,Khalil Herbert,Ja'Marr Chase,Andrei Iosivas,Tamaurice Higgins,Drew Sample
+SF,40.0,31.833333333333332,32.06,58.314285714285724,41.833333333333336,Brock Purdy,Isaac Guerendo,Bennie Jennings,Tyshun Samuel,Christian Conley,George Kittle
+NE,38.2,36.4,19.174999999999997,41.45,62.800000000000004,Drake Maye,Rhamondre Stevenson,Kendrick Bourne,Kayshon Boutte,Demario Douglas,Hunter Henry
+KC,37.1,30.8,29.974999999999998,55.56666666666667,32.75,Patrick Mahomes,Isiah Pacheco,DeAndre Hopkins,Xavier Worthy,Marquise Brown,Travis Kelce
+DAL,35.1,22.900000000000002,18.800000000000004,59.128571428571426,49.03333333333333,Cooper Rush,Rico Dowdle,Kavontae Turpin,Jalen Tolbert,Jonathan Mingo,Jake Ferguson
+IND,34.4,21.2,28.325,66.21666666666667,24.900000000000002,Joseph Flacco,Jonathan Taylor,Michael Pittman,Joshua Downs,Alec Pierce,Kylen Granson
+ARI,34.1,25.95,31.8,39.67142857142857,49.76666666666666,Kyler Murray,Michael Carter,Greg Dortch,Marvin Harrison,Michael Wilson,Trey McBride
+MIN,33.6,23.424999999999997,21.25,53.300000000000004,44.449999999999996,Sam Darnold,Aaron Jones,Jordan Addison,Justin Jefferson,Jalen Nailor,Thomas Hockenson
+JAX,33.6,21.133333333333336,21.6,56.25714285714287,45.375,Michael Jones,Travis Etienne,Christopher Washington,Brian Thomas,Joshua Dedmon-Reynolds Reynolds,Luke Farrell
+DEN,32.5,17.766666666666666,20.974999999999998,70.21666666666667,24.266666666666666,Bo Nix,Javonte Williams,Courtland Sutton,Marvin Mims,Lil'Jordan Humphrey,Adam Trautman
+NO,32.2,19.400000000000002,27.65,43.11,54.1,Derek Carr,Alvin Kamara,Marquez Valdes-Scantling,Cedrick Wilson,Kevin Austin,Foster Moreau
+PIT,31.8,25.53333333333333,19.020000000000003,49.48571428571428,35.980000000000004,Russell Wilson,Najee Harris,Calvin Austin,George Pickens,Vanchii Jefferson,Pat Freiermuth
+CAR,31.7,16.666666666666668,23.68,69.6857142857143,19.133333333333333,Bryce Young,Raheem Blackshear,Adam Thielen,Xavier Legette,Jalen Coker,Tommy Tremble
+LAC,30.7,19.666666666666668,29.775,48.525000000000006,31.920000000000005,Justin Herbert,Gus Edwards,Andrew McConkey,Quentin Johnston,Darrell Chark,Will Dissly
+HOU,30.5,20.849999999999998,26.82,51.525000000000006,25.9,Coleridge Stroud,Joe Mixon,John Metchie,Robert Woods,Nico Collins,Dalton Schultz
+TEN,30.0,15.433333333333332,23.250000000000004,51.412499999999994,42.225,Mason Rudolph,Tony Pollard,Tyler Boyd,Nicholas Westbrook-Ikhine,Calvin Ridley,Chigoziem Okonkwo
+CHI,28.9,18.0,24.75,46.92857142857142,33.46666666666667,Caleb Williams,D'Andre Swift,Rome Odunze,Denniston Moore,Keenan Allen,Cole Kmet
+SEA,28.4,15.733333333333334,31.150000000000002,40.96666666666666,37.55,Eugene Smith,Zach Charbonnet,Tyler Lockett,DeKaylin Metcalf,Jaxon Smith-Njigba,Noah Fant
+LV,27.2,18.6,18.639999999999997,48.214285714285715,26.500000000000004,Aidan O'Connell,Ameer Abdullah,Jakobi Meyers,Tre Tucker,Ramel Keyton,Brock Bowers
+MIA,27.0,22.900000000000002,21.95,32.733333333333334,35.2,Tua Tagovailoa,Dominique Mostert,Tyreek Hill,Jaylen Waddle,Tanner Cracraft,Jonnu Smith
+CLE,25.4,8.075,21.7,43.37777777777778,46.875,Jameis Winston,D'Onta Foreman,Elijah Moore,Jerry Jeudy,Michael Woods,Jordan Akins
+NYG,24.5,11.05,23.966666666666665,43.3,29.525,Drew Lock,Devin Singletary,Darius Slayton,Charles Robinson,Malik Nabers,Daniel Bellinger
