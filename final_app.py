@@ -2015,3 +2015,118 @@ with tab5:
         use_container_width=True
     )
     st.caption("✅ = correct prediction. Confidence = model's home-win probability. Enhanced model uses 27 features.")
+
+    # ── $10 Moneyline Simulation ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("💰 $10 Moneyline Simulation")
+    st.caption("What would have happened if you bet $10/game on the model's picks at actual Vegas moneylines?")
+
+    _ml_cols = ['season', 'week', 'home_team', 'away_team', 'home_moneyline', 'away_moneyline']
+    _ml_ok = all(c in games.columns for c in _ml_cols)
+    if _ml_ok:
+        _ml_raw = games[_ml_cols].dropna(subset=['home_moneyline', 'away_moneyline'])
+        data5_ml = data5.merge(_ml_raw, on=['season', 'week', 'home_team', 'away_team'], how='left')
+        data5_ml = data5_ml.dropna(subset=['home_moneyline', 'away_moneyline']).copy()
+    else:
+        data5_ml = pd.DataFrame()
+
+    if len(data5_ml) < 10:
+        st.info("Moneyline data not available for the selected seasons (data available from ~2009 onward).")
+    else:
+        def _ml_pnl(odds, won, stake=10.0):
+            """Return P&L for a single $10 moneyline bet (American odds)."""
+            if pd.isna(odds) or odds == 0:
+                return 0.0
+            if won:
+                return (stake * odds / 100.0) if odds > 0 else (stake * 100.0 / abs(odds))
+            return -stake
+
+        def _implied_prob(ml):
+            return abs(ml) / (abs(ml) + 100) if ml < 0 else 100 / (ml + 100)
+
+        def _model_bet(row):
+            """Bet on model's predicted winner at their moneyline."""
+            if row['predicted'] == 1:
+                return _ml_pnl(row['home_moneyline'], row['home_win'] == 1)
+            return _ml_pnl(row['away_moneyline'], row['home_win'] == 0)
+
+        def _home_bet(row):
+            """Always bet the home team."""
+            return _ml_pnl(row['home_moneyline'], row['home_win'] == 1)
+
+        def _fav_bet(row):
+            """Always bet the moneyline favorite."""
+            home_fav = _implied_prob(row['home_moneyline']) >= _implied_prob(row['away_moneyline'])
+            if home_fav:
+                return _ml_pnl(row['home_moneyline'], row['home_win'] == 1)
+            return _ml_pnl(row['away_moneyline'], row['home_win'] == 0)
+
+        data5_ml['pnl_model']    = data5_ml.apply(_model_bet, axis=1)
+        data5_ml['pnl_home']     = data5_ml.apply(_home_bet,  axis=1)
+        data5_ml['pnl_favorite'] = data5_ml.apply(_fav_bet,   axis=1)
+
+        n_games   = len(data5_ml)
+        wagered   = n_games * 10.0
+        model_net = data5_ml['pnl_model'].sum()
+        home_net  = data5_ml['pnl_home'].sum()
+        fav_net   = data5_ml['pnl_favorite'].sum()
+        model_roi = (model_net / wagered) * 100
+        home_roi  = (home_net  / wagered) * 100
+        fav_roi   = (fav_net   / wagered) * 100
+        fav_wins  = (data5_ml['pnl_favorite'] > 0).mean() * 100
+
+        # Headline metrics
+        _mc1, _mc2, _mc3, _mc4 = st.columns(4)
+        _mc1.metric("Model Net P&L", f"${model_net:+.0f}",
+                    help="Cumulative profit/loss betting $10/game on model's picks")
+        _mc2.metric("Model ROI", f"{model_roi:+.1f}%",
+                    help="Return on total dollars wagered")
+        _mc3.metric("Games Simulated", f"{n_games:,}",
+                    help="Games with available Vegas moneyline data")
+        _mc4.metric("Total Wagered", f"${wagered:,.0f}",
+                    help="$10 × number of games")
+
+        # Strategy comparison table
+        _comp_df = pd.DataFrame({
+            'Strategy':  ['🤖 Model Picks', '🏠 Always Home', '⭐ Always Favorite'],
+            'Net P&L':   [f'${model_net:+.0f}', f'${home_net:+.0f}', f'${fav_net:+.0f}'],
+            'ROI':       [f'{model_roi:+.1f}%', f'{home_roi:+.1f}%', f'{fav_roi:+.1f}%'],
+            'Win Rate':  [
+                f"{data5_ml['correct'].mean()*100:.1f}%",
+                f"{data5_ml['home_win'].mean()*100:.1f}%",
+                f"{fav_wins:.1f}%",
+            ],
+        })
+        st.dataframe(_comp_df, use_container_width=True, hide_index=True)
+
+        # Cumulative P&L chart
+        import plotly.graph_objects as _go
+        _sorted = data5_ml.sort_values(['season', 'week']).reset_index(drop=True)
+        _sorted['game_num']      = range(1, len(_sorted) + 1)
+        _sorted['cum_model']     = _sorted['pnl_model'].cumsum()
+        _sorted['cum_home']      = _sorted['pnl_home'].cumsum()
+        _sorted['cum_favorite']  = _sorted['pnl_favorite'].cumsum()
+
+        fig_ml = _go.Figure()
+        fig_ml.add_trace(_go.Scatter(x=_sorted['game_num'], y=_sorted['cum_model'],
+                                     name='Model Picks', line=dict(color='#00c4cc', width=2)))
+        fig_ml.add_trace(_go.Scatter(x=_sorted['game_num'], y=_sorted['cum_home'],
+                                     name='Always Home', line=dict(color='#888', width=1.5, dash='dot')))
+        fig_ml.add_trace(_go.Scatter(x=_sorted['game_num'], y=_sorted['cum_favorite'],
+                                     name='Always Favorite', line=dict(color='#ff7f0e', width=1.5, dash='dash')))
+        fig_ml.add_hline(y=0, line_color='white', line_dash='dot', opacity=0.3)
+        fig_ml.update_layout(
+            title='Cumulative P&L — $10/game Moneyline Bets (last 5 seasons)',
+            xaxis_title='Game # (chronological)',
+            yaxis_title='Cumulative P&L ($)',
+            legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            height=360,
+            margin=dict(l=0, r=0, t=50, b=0),
+        )
+        st.plotly_chart(fig_ml, use_container_width=True)
+
+        st.caption(
+            "Note: Even a model with >50% accuracy typically shows negative ROI on moneyline bets "
+            "because favorites pay out less than $10 profit per win (you need >52.4% win rate on -110 juice). "
+            "Positive ROI requires consistently picking upsets that beat Vegas expectations."
+        )
