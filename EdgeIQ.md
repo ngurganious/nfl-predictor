@@ -118,33 +118,49 @@ Every sport must have a Backtesting tab with:
 
 > A structured parlay strategy that turns high-confidence props into tiered ladders. The Banker anchor subsidizes longer-shot parlays — break-even by design.
 
-#### Tab & Interaction Flow
+#### Player Props Tab — Game Card Selection
+- **One expandable card per game** (same layout as Game Predictor tab)
+- **Expand a card** → shows **game-level bets** (moneyline win, O/U lean) + **top 5 player props**, all ranked by model confidence
+- Each selectable leg shows: bet description, model prediction, **prediction accuracy %**, Vegas line, edge, **selection toggle**
+- **All bet types are valid ladder legs** — outright wins, over/unders, and player props are treated equally and ranked together by confidence
+- **Cross-game selection:** toggle legs from multiple expanded game cards; selections persist across expand/collapse
+- **Auto-selection:** top 3 legs by confidence (across all games, all bet types) pre-selected as Banker base
+- **"🪜 Build Ladder" button** (visible when ≥3 legs selected) → navigates to Parlay Ladder tab
+
+#### Parlay Ladder Tab — 4 Sections
 - **"🪜 Parlay Ladder" tab** in both `final_app.py` and `nhl_app.py`
-- **Inline selection on Player Props tab:** each prop card has a toggle/checkbox to add to the ladder. No tab-switching required.
-- **Auto-selection:** Top 3 props by model probability are pre-selected as the Banker base. Remaining eligible props are auto-assigned to successive ladder rungs in descending probability order.
-- **User override:** user can deselect any auto-picked prop or manually add/remove props before building.
-- **Build button:** "🪜 Build Ladder" button on the props tab finalizes selection and navigates to the Parlay Ladder tab with the full ladder rendered.
+- 4 sections (one per tier), each showing: leg details, combined odds, **overarching prediction %**, stake, payout
 
 #### 5.8.1 Leg Eligibility
-- Pool: player props where model confidence **P ≥ 75%** (Lock-tier)
-- Ranked by descending confidence (highest first)
-- Minimum pool: **3 props** for Banker only; **10 props** for a full 4-tier ladder
+- **Leg types:** moneyline (outright win), Over/Under, player props — all treated equally
+- Pool: any bet where model confidence **P ≥ 75%** (Lock-tier)
+- Ranked by descending confidence across all games and bet types
+- Per game: up to 2 game-level bets (ML + O/U) + top 5 player props shown
+- Minimum pool: **3 legs** for Banker only
 
-#### 5.8.2 Tier Structure
-| Tier | Name | Legs | Source | Target Win Rate |
-|------|------|------|--------|-----------------|
-| 1 | **The Safety** ("Banker") | 3 | Top 3 props | ~40–45% |
-| 2 | **The Growth** ("Accelerator") | 5 | Tier 1 + props [4, 5] | ~20–25% |
-| 3 | **The Growth** ("Accelerator") | 7 | Tier 2 + props [6, 7] | ~10–15% |
-| 4 | **The Jackpot** ("Moonshot") | 10 | Tier 3 + props [8, 9, 10] | ~3–5% |
+#### 5.8.2 Tier Structure — Dynamic Sizing
+Tier leg counts are **computed dynamically**, not hardcoded. The optimization algorithm:
+1. Banker tier: smallest N-leg parlay where payout ≥ total ladder cost (might be 2, 3, or 4)
+2. Accelerator tiers: partition remaining legs to maximize EV separation between tiers
+3. Moonshot tier: all remaining selected props
+
+| Tier | Name | Legs | Sizing Rule |
+|------|------|------|-------------|
+| 1 | **The Safety** ("Banker") | N₁ | Smallest parlay where payout ≥ total ladder cost |
+| 2 | **The Growth** ("Accelerator 1") | N₂ | Tier 1 + next best; combined P still viable |
+| 3 | **The Growth** ("Accelerator 2") | N₃ | Tier 2 + next best; crosses into long-shot |
+| 4 | **The Jackpot** ("Moonshot") | N₄ | All remaining selected props |
+
+Each tier prominently displays its **overarching prediction %** (product of individual leg probabilities, adjusted for correlation).
 
 #### 5.8.3 Anchor Break-Even Rule
-The 3-leg Banker payout (at combined parlay odds) **must equal or exceed** the total wager across all four tiers. The most likely hit covers the entire ladder cost.
+The Banker tier's payout at combined parlay odds **must equal or exceed** the total wager across all four tiers. The tier optimization solves for this constraint dynamically.
 
 #### 5.8.4 Correlation Filter
 - Do not combine two "under" props from the same high-scoring projected game
 - Do not combine opposing-side props that conflict (e.g., QB1 over passing + QB2 over passing in a low-total game)
-- Filtered props shown with reason in the ladder view
+- Flag (warn) when multiple props from the same game are selected — inform user of correlation risk
+- Filtered/flagged props shown with reason in the ladder view
 
 #### 5.8.5 Stake Sizing
 - Total ladder wager respects **25% max daily exposure** cap (§6)
@@ -153,14 +169,24 @@ The 3-leg Banker payout (at combined parlay odds) **must equal or exceed** the t
 - Kelly Criterion applies to total ladder allocation, not individual legs
 
 #### 5.8.6 Ladder Tab UI
+Each tier section shows:
 | Element | Description |
 |---------|-------------|
-| Ladder summary card | All 4 tiers: legs listed, combined odds, stake, potential payout |
-| Per-tier confidence | Average model probability across legs in that tier |
-| Correlation flags | Filtered-out props with conflict reason |
-| Historical ROI | Backtested ladder ROI from historical prop data |
-| Volatility note | "The 3-leg Banker keeps you in the game while waiting for the 10-leg hit" |
-| Selected props table | All chosen props with rank, game, prop type, model prob, tier assignment |
+| Tier header | Name + leg count (e.g., "🏦 The Safety — 3 Legs") |
+| Overarching prediction % | Combined probability of all legs hitting |
+| Leg detail table | Player, game, prop type, model prediction, accuracy %, Vegas line |
+| Combined parlay odds | American odds equivalent |
+| Suggested stake | Dollar amount from break-even math |
+| Potential payout | Stake × combined odds |
+
+Ladder-wide summary above the tier sections:
+| Element | Description |
+|---------|-------------|
+| Break-even status | Banker payout vs total ladder cost |
+| Tier size rationale | "Optimized: N₁ / N₂ / N₃ / N₄ legs" |
+| Correlation flags | Filtered/flagged props with reasons |
+| Historical ladder ROI | Backtested from prop data |
+| Volatility note | "The Banker keeps you in the game while waiting for the Moonshot hit" |
 
 ---
 
