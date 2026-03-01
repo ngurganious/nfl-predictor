@@ -203,6 +203,36 @@ def compute_stakes(tiers, total_budget):
     return results
 
 
+# ── Ladder simulation (backtesting) ──────────────────────────────────
+
+def simulate_ladder_week(legs, budget):
+    if len(legs) < 3:
+        return None
+    tiers = optimize_tiers(legs, budget)
+    sized = compute_stakes(tiers, budget)
+
+    total_staked = sum(t['stake'] for t in sized)
+    total_returned = 0.0
+    tiers_hit = 0
+    tier_results = []
+
+    for tier in sized:
+        all_hit = all(leg.get('hit', False) for leg in tier['legs'])
+        tier_results.append(all_hit)
+        if all_hit:
+            total_returned += tier['payout']
+            tiers_hit += 1
+
+    return {
+        'total_staked': total_staked,
+        'total_returned': total_returned,
+        'net_pnl': total_returned - total_staked,
+        'tiers_hit': tiers_hit,
+        'total_tiers': len(sized),
+        'tier_hits': tier_results,
+    }
+
+
 # ── Correlation filter ───────────────────────────────────────────────
 
 def check_correlations(legs):

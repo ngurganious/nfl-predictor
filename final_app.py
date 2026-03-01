@@ -292,6 +292,118 @@ def load_enhanced_games():
     except Exception:
         return pd.DataFrame()
 
+@st.cache_data(show_spinner="Simulating historical ladder performance...")
+def simulate_ladder_backtest():
+    import pickle as _pkl
+    from scipy.stats import norm as _norm
+    import parlay_math as _pm_bt
+
+    _pass = pd.read_csv('passing_stats.csv')
+    _rush = pd.read_csv('rushing_stats.csv')
+    _rec  = pd.read_csv('receiving_stats.csv')
+
+    def _unpack(raw):
+        if isinstance(raw, dict):
+            return raw['model'], raw.get('features', [])
+        return raw, []
+
+    with open('pass_yards_model.pkl','rb') as f: _pm, _pf = _unpack(_pkl.load(f))
+    with open('rush_yards_model.pkl','rb') as f: _rm, _rf = _unpack(_pkl.load(f))
+    with open('rec_yards_model.pkl','rb') as f:  _rcm, _rcf = _unpack(_pkl.load(f))
+
+    _PASS_MAE, _RUSH_MAE, _REC_MAE = 63.3, 21.2, 21.3
+    _BUDGET = 100.0
+    _CONF_MIN = 0.58
+    _MAX_LEGS = 8
+
+    def _conf(pred, line, mae):
+        if line is None or line <= 0 or mae <= 0:
+            return 0.5, 'OVER', 0.0
+        sigma = mae * 1.253
+        edge = pred - line
+        z = edge / sigma
+        over_p = _norm.cdf(z)
+        if over_p >= 0.5:
+            return over_p, 'OVER', edge
+        return 1.0 - over_p, 'UNDER', edge
+
+    def _process(df, model, feats, target_col, avg_col, mae, prop_type):
+        rows = df.dropna(subset=[avg_col]).copy()
+        extra = [c for c in [target_col, avg_col, 'season', 'week', 'game_id'] if c not in feats]
+        valid = rows[feats + extra].dropna(subset=feats + [target_col, avg_col])
+        if valid.empty:
+            return pd.DataFrame()
+
+        preds = model.predict(valid[feats])
+        lines = valid[avg_col].values
+        actuals = valid[target_col].values
+        seasons = valid['season'].values
+        weeks = valid['week'].values
+        game_ids = valid['game_id'].values
+
+        results = []
+        for i in range(len(preds)):
+            conf, direction, edge = _conf(preds[i], lines[i], mae)
+            if conf < _CONF_MIN:
+                continue
+            if direction == 'OVER':
+                hit = actuals[i] > lines[i]
+            else:
+                hit = actuals[i] < lines[i]
+            results.append({
+                'season': seasons[i], 'week': weeks[i], 'game_id': game_ids[i],
+                'confidence': conf, 'direction': direction, 'edge': edge,
+                'odds': -110, 'hit': bool(hit), 'prop_type': prop_type,
+            })
+        return pd.DataFrame(results)
+
+    pass_legs = _process(_pass, _pm, _pf, 'pass_yards', 'avg_pass_yards_l4', _PASS_MAE, 'pass_yds')
+    rush_legs = _process(_rush, _rm, _rf, 'rush_yards', 'avg_rush_yards_l4', _RUSH_MAE, 'rush_yds')
+    rec_legs  = _process(_rec, _rcm, _rcf, 'rec_yards', 'avg_rec_yards_l4', _REC_MAE, 'rec_yds')
+
+    all_legs = pd.concat([pass_legs, rush_legs, rec_legs], ignore_index=True)
+    if all_legs.empty:
+        return [], {}
+
+    week_results = []
+    banker_hits, banker_total = 0, 0
+    accel_hits, accel_total = 0, 0
+    moon_hits, moon_total = 0, 0
+
+    for (season, week), grp in all_legs.groupby(['season', 'week'], sort=True):
+        top = grp.nlargest(_MAX_LEGS, 'confidence')
+        if len(top) < 3:
+            continue
+        legs = top.to_dict('records')
+        result = _pm_bt.simulate_ladder_week(legs, _BUDGET)
+        if result is None:
+            continue
+        result['season'] = season
+        result['week'] = week
+        result['n_legs'] = len(legs)
+        week_results.append(result)
+
+        hits = result.get('tier_hits', [])
+        n_tiers = len(hits)
+        if n_tiers >= 1:
+            banker_total += 1
+            if hits[0]: banker_hits += 1
+        if n_tiers >= 2:
+            for h in hits[1:-1] if n_tiers > 2 else [hits[1]]:
+                accel_total += 1
+                if h: accel_hits += 1
+        if n_tiers >= 3:
+            moon_total += 1
+            if hits[-1]: moon_hits += 1
+
+    summary = {
+        'weeks': len(week_results),
+        'banker_rate': banker_hits / banker_total * 100 if banker_total else 0,
+        'accel_rate': accel_hits / accel_total * 100 if accel_total else 0,
+        'moon_rate': moon_hits / moon_total * 100 if moon_total else 0,
+    }
+    return week_results, summary
+
 game_model, elo_ratings, pass_model, rush_model, rec_model, player_lookup, \
     enhanced_features, enhanced_acc, pass_feat, rush_feat, rec_feat = load_all()
 games, passing, rushing, receiving, lineup_df = load_data()
@@ -2545,6 +2657,76 @@ def render_nfl_app():
                     f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
                     f2.metric("Potential Payout", f"${tier.get('payout', 0):.2f}")
                     f3.metric("Implied Prob", f"{_cp*100:.1f}%")
+
+        # ── Historical Ladder Performance ──────────────────
+        st.divider()
+        with st.expander("📊 Historical Ladder Performance (2016-2024)", expanded=False):
+            try:
+                _bt_weeks, _bt_summary = simulate_ladder_backtest()
+                if not _bt_weeks:
+                    st.info("No historical data available for ladder simulation.")
+                else:
+                    _n_weeks = _bt_summary['weeks']
+                    _win_weeks = sum(1 for w in _bt_weeks if w['net_pnl'] > 0)
+                    _win_rate = _win_weeks / _n_weeks * 100 if _n_weeks else 0
+                    _total_pnl = sum(w['net_pnl'] for w in _bt_weeks)
+                    _total_staked = sum(w['total_staked'] for w in _bt_weeks)
+                    _overall_roi = _total_pnl / _total_staked * 100 if _total_staked else 0
+
+                    bm1, bm2, bm3, bm4 = st.columns(4)
+                    bm1.metric("Weeks Simulated", f"{_n_weeks}")
+                    bm2.metric("Profitable Weeks", f"{_win_rate:.0f}%", f"{_win_weeks}/{_n_weeks}")
+                    bm3.metric("Overall ROI", f"{_overall_roi:+.1f}%",
+                               help="Net P&L / total staked across all simulated weeks")
+                    bm4.metric("Cumulative P&L", f"${_total_pnl:+,.0f}",
+                               help="At $100 per ladder per week")
+
+                    # Tier hit rates
+                    st.markdown(
+                        f"**Tier Hit Rates:** "
+                        f"Banker {_bt_summary['banker_rate']:.0f}% · "
+                        f"Accelerator {_bt_summary['accel_rate']:.0f}% · "
+                        f"Moonshot {_bt_summary['moon_rate']:.0f}%"
+                    )
+
+                    # Cumulative P&L chart
+                    import plotly.graph_objects as _go_bt
+                    _cum_pnl = []
+                    _running = 0.0
+                    for w in _bt_weeks:
+                        _running += w['net_pnl']
+                        _cum_pnl.append(_running)
+
+                    _week_labels = [f"S{int(w['season'])%100} W{int(w['week'])}" for w in _bt_weeks]
+
+                    _fig_bt = _go_bt.Figure()
+                    _fig_bt.add_trace(_go_bt.Scatter(
+                        x=list(range(1, len(_cum_pnl) + 1)),
+                        y=_cum_pnl,
+                        name='Cumulative P&L',
+                        line=dict(color='#22d3ee', width=2),
+                        hovertext=_week_labels,
+                        hoverinfo='text+y',
+                    ))
+                    _fig_bt.add_hline(y=0, line_color='white', line_dash='dot', opacity=0.4,
+                                      annotation_text='Break even', annotation_position='left')
+                    _fig_bt.update_layout(
+                        title='Cumulative Ladder P&L ($100/week stake)',
+                        xaxis_title='Week # (chronological)',
+                        yaxis_title='Cumulative P&L ($)',
+                        height=340,
+                        margin=dict(l=0, r=0, t=50, b=0),
+                    )
+                    st.plotly_chart(_fig_bt, use_container_width=True)
+
+                    st.caption(
+                        "⚠️ **Simulated results — not a profit guarantee.** "
+                        "Uses synthetic Vegas lines (player's rolling 4-game average) at standard -110 odds. "
+                        "Most seasons are in-sample (models trained on them), so absolute returns are inflated. "
+                        "Use this to evaluate the *ladder structure* (tier sizing, break-even Banker), not as a P&L forecast."
+                    )
+            except Exception as _bt_err:
+                st.warning(f"Could not load historical ladder data: {_bt_err}")
 
     # ══════════════════════════════════════════════════
     # TAB 3: HEAD TO HEAD
