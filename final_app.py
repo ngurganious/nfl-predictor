@@ -353,7 +353,7 @@ def render_nfl_app():
             st.session_state['sport'] = None
             st.rerun()
     with _title_col:
-        st.title("⚡ EdgeIQ — NFL")
+        st.markdown('<div class="edgeiq-logo"><span class="edgeiq-icon">⚡</span> NFL Terminal</div>', unsafe_allow_html=True)
     # ── Header ────────────────────────────────────────
     st.markdown("*25 years of data • ELO ratings • Lineup-adjusted ML predictions • Player props*")
     st.divider()
@@ -397,11 +397,11 @@ def render_nfl_app():
         Returns:
             (kelly_pct, tier, badge_str)
             kelly_pct  — % of bankroll to bet (0–10)
-            tier       — 'STRONG' | 'LEAN' | 'SMALL' | 'PASS'
-            badge_str  — emoji label for display
+            tier       — 'signal-strong' | 'signal-lean' | 'signal-pass'
+            badge_str  — Text label
         """
         if moneyline_odds is None or moneyline_odds == 0 or model_prob is None:
-            return 0.0, 'PASS', '⚪ PASS'
+            return 0.0, 'signal-pass', 'PASS'
         try:
             b = (100.0 / abs(moneyline_odds)) if moneyline_odds < 0 else (moneyline_odds / 100.0)
             q = 1.0 - float(model_prob)
@@ -409,14 +409,14 @@ def render_nfl_app():
             kelly = max(0.0, min(full_kelly * fraction, 0.10))  # cap at 10% bankroll
             pct = kelly * 100.0
         except Exception:
-            return 0.0, 'PASS', '⚪ PASS'
+            return 0.0, 'signal-pass', 'PASS'
         if pct >= 4.0:
-            return pct, 'STRONG', '💎 STRONG'
+            return pct, 'signal-strong', 'STRONG EDGE'
         if pct >= 2.0:
-            return pct, 'LEAN',   '📈 LEAN'
+            return pct, 'signal-lean',   'LEAN'
         if pct >= 1.0:
-            return pct, 'SMALL',  '👀 SMALL'
-        return pct, 'PASS', '⚪ PASS'
+            return pct, 'signal-lean',   'SMALL EDGE'
+        return pct, 'signal-pass', 'PASS'
     
     
     def _spread_to_ml(spread_for_team: float) -> float:
@@ -806,17 +806,15 @@ def render_nfl_app():
         winner     = home_team if fph > 0.5 else away_team
         confidence = max(fph, fpaw)
         if confidence > 0.75:
-            label, _conf_color = "🔒 LOCK", "#22c55e"
+            label, _css_class = "LOCK", "signal-lock"
         elif confidence > 0.70:
-            label, _conf_color = "🔥 HIGH CONFIDENCE", "#22c55e"
+            label, _css_class = "HIGH CONFIDENCE", "signal-strong"
         elif confidence > 0.60:
-            label, _conf_color = "✅ MODERATE", "#eab308"
+            label, _css_class = "MODERATE", "signal-lean"
         else:
-            label, _conf_color = "⚠️ TOSS-UP", "#94a3b8"
+            label, _css_class = "TOSS-UP", "signal-pass"
         st.markdown(
-            f'<div style="border-left:4px solid {_conf_color};padding:6px 12px;'
-            f'background:{_conf_color}22;border-radius:4px;margin:4px 0">'
-            f'<strong style="color:{_conf_color}">{label}: {winner}</strong></div>',
+            f'<div class="signal-badge {_css_class}">{label}: {winner}</div>',
             unsafe_allow_html=True)
     
         _lo = result.get('live_odds', {})
@@ -869,11 +867,9 @@ def render_nfl_app():
                    help="Bet size based on selected strategy — adjust in sidebar")
         kc3.metric("Bet Amount", f"${_bet_amt_k:.0f}",
                    help=f"Of your ${_bankroll_val:,} bankroll — adjust bankroll in sidebar")
-        _badge_colors = {'STRONG': '#22c55e', 'LEAN': '#eab308', 'SMALL': '#eab308', 'PASS': '#94a3b8'}
-        _bc = _badge_colors.get(_ktier_k, '#94a3b8')
         kc4.markdown(
             f'<p style="font-size:0.8em;color:gray;margin-bottom:4px">Signal</p>'
-            f'<p style="font-size:1.1em;font-weight:700;color:{_bc};margin:0">{_kbadge_k}</p>',
+            f'<span class="signal-badge {_ktier_k}">{_kbadge_k}</span>',
             unsafe_allow_html=True)
         if _strategy_k == 'Fixed %':
             _caption_extra = f"Fixed {_fixed_pct_k:.1f}% per game regardless of edge."
@@ -1029,8 +1025,8 @@ def render_nfl_app():
                 _sprd_b   = spread_disp if isinstance(spread_disp, (int, float)) else 0.0
                 _badge_ml = _spread_to_ml(_sprd_b if _badge_pick_home else -_sprd_b)
             _bkpct, _bktier, _bkbadge = _kelly_rec(_badge_p, _badge_ml)
-            if _bktier != 'PASS':
-                label_parts.append(f"{_bkbadge} {_bkpct:.1f}%")
+            if _bktier != 'signal-pass':
+                label_parts.append(f"💎 {_bkpct:.1f}%")
             else:
                 label_parts.append("⚪ PASS")
     
@@ -1543,17 +1539,15 @@ def render_nfl_app():
             winner     = home_team if final_prob_home > 0.5 else away_team
             confidence = max(final_prob_home, final_prob_away)
             if confidence > 0.75:
-                label, _conf_color = "🔒 LOCK", "#22c55e"
+                label, _css_class = "LOCK", "signal-lock"
             elif confidence > 0.70:
-                label, _conf_color = "🔥 HIGH CONFIDENCE", "#22c55e"
+                label, _css_class = "HIGH CONFIDENCE", "signal-strong"
             elif confidence > 0.60:
-                label, _conf_color = "✅ MODERATE CONFIDENCE", "#eab308"
+                label, _css_class = "MODERATE", "signal-lean"
             else:
-                label, _conf_color = "⚠️ TOSS-UP", "#94a3b8"
+                label, _css_class = "TOSS-UP", "signal-pass"
             st.markdown(
-                f'<div style="border-left:4px solid {_conf_color};padding:6px 12px;'
-                f'background:{_conf_color}22;border-radius:4px;margin:4px 0">'
-                f'<strong style="color:{_conf_color}">{label}: {winner} wins</strong></div>',
+                f'<div class="signal-badge {_css_class}">{label}: {winner}</div>',
                 unsafe_allow_html=True)
     
             # Vegas comparison
@@ -2446,6 +2440,112 @@ def render_nfl_app():
                 else:
                     st.warning(f"Not enough recent data for {player}.")
     
+    # ══════════════════════════════════════════════════
+    # TAB LADDER: PARLAY LADDER
+    # ══════════════════════════════════════════════════
+    with tab_ladder:
+        st.header("🪜 Parlay Ladder")
+
+        import parlay_math as _pm
+
+        _rpl_sels = st.session_state.get('rpl_selections', {})
+
+        if len(_rpl_sels) < 3:
+            st.info(
+                f"Select at least **3 legs** from the **Player Props** tab to build a ladder. "
+                f"Currently selected: **{len(_rpl_sels)}** legs."
+            )
+            st.caption("Go to the Player Props tab → This Week's Props → expand game cards → toggle checkboxes.")
+        else:
+            _legs = sorted(_rpl_sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
+            _corr_flags = _pm.check_correlations(_legs)
+
+            _bankroll = int(st.session_state.get('bankroll', 1000))
+            _max_exp = int(_bankroll * 0.25)
+            _ladder_budget = st.slider(
+                "Total Ladder Stake ($)",
+                min_value=10, max_value=max(10, _max_exp),
+                value=min(50, max(10, _max_exp)),
+                step=5, key='rpl_ladder_budget',
+                help=f"25% max daily exposure cap: ${_max_exp}"
+            )
+
+            _tiers = _pm.optimize_tiers(_legs, _ladder_budget)
+            _tier_results = _pm.compute_stakes(_tiers, _ladder_budget)
+
+            # ── Summary metrics (Gemini layout pattern) ──────────────
+            _n_games = len(set(v.get('game_label', '') for v in _rpl_sels.values()))
+            _max_payout = sum(t.get('payout', 0) for t in _tier_results)
+            _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
+            _be_ok = _banker_payout >= _ladder_budget
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Legs", f"{len(_legs)}", f"{len(_tier_results)} Tiers")
+            c2.metric("Total Stake", f"${_ladder_budget}", f"Bankroll: ${_bankroll:,}")
+            _roi_pct = ((_max_payout - _ladder_budget) / _ladder_budget * 100) if _ladder_budget > 0 else 0
+            c3.metric("Max Payout", f"${_max_payout:.0f}", f"+{_roi_pct:.0f}% ROI")
+            if _be_ok:
+                c4.markdown('<div class="signal-badge signal-lock">\u2705 BANKER COVERS COST</div>', unsafe_allow_html=True)
+            else:
+                _short = _ladder_budget - _banker_payout
+                c4.markdown(f'<div class="signal-badge signal-lean">\u26a0\ufe0f BANKER SHORT ${_short:.0f}</div>', unsafe_allow_html=True)
+
+            # Correlation flags
+            if _corr_flags:
+                with st.expander(f"\u26a0\ufe0f {len(_corr_flags)} Correlation Flags", expanded=False):
+                    for _fl in _corr_flags:
+                        st.warning(_fl['message'])
+
+            st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
+            st.divider()
+
+            # ── Tier sections (Gemini layout pattern — wired to real data) ──
+            _TIER_EMOJI = ['\U0001f3e6', '\U0001f4c8', '\U0001f680', '\U0001f319']
+            for i, tier in enumerate(_tier_results):
+                with st.container(border=True):
+                    _emoji = _TIER_EMOJI[i] if i < len(_TIER_EMOJI) else '\U0001f3af'
+                    _n = tier.get('n_legs', len(tier.get('legs', [])))
+                    _am = tier.get('combined_american', 0)
+                    _am_str = f"+{_am}" if _am > 0 else str(_am)
+
+                    h1, h2 = st.columns([3, 1])
+                    with h1:
+                        st.markdown(
+                            f"**Tier {i+1}: {tier['name']}** "
+                            f"<span style='color:#94a3b8'>\u2014 {tier.get('subtitle','')} \u00b7 {_n} Legs</span>",
+                            unsafe_allow_html=True
+                        )
+                    with h2:
+                        st.markdown(
+                            f"<div style='text-align:right; font-family:JetBrains Mono; font-weight:bold; color:#22d3ee; font-size:1.2em'>{_am_str}</div>",
+                            unsafe_allow_html=True
+                        )
+
+                    # Combined probability
+                    _cp = tier.get('combined_prob', 0)
+                    _cp_color = '#22c55e' if _cp > 0.3 else '#eab308' if _cp > 0.1 else '#ef4444'
+                    st.markdown(
+                        f"<div style='font-size:1.1em;font-weight:600;color:{_cp_color}'>Combined Probability: {_cp*100:.1f}%</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # Leg details
+                    for leg in tier.get('legs', []):
+                        _desc = leg.get('description', '')
+                        _conf = leg.get('confidence', 0)
+                        _edge = leg.get('edge', 0)
+                        _badge_cls = 'signal-lock' if _conf >= 0.75 else 'signal-strong' if _conf >= 0.65 else 'signal-lean' if _conf >= 0.55 else 'signal-pass'
+                        l1, l2, l3 = st.columns([4, 2, 2])
+                        l1.write(_desc)
+                        l2.markdown(f"<span class='signal-badge {_badge_cls}'>Edge {_edge:+.1f}</span>", unsafe_allow_html=True)
+                        l3.caption(f"Prob: {_conf*100:.1f}%")
+
+                    st.divider()
+                    f1, f2, f3 = st.columns([2, 2, 2])
+                    f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
+                    f2.metric("Potential Payout", f"${tier.get('payout', 0):.2f}")
+                    f3.metric("Implied Prob", f"{_cp*100:.1f}%")
+
     # ══════════════════════════════════════════════════
     # TAB 3: HEAD TO HEAD
     # ══════════════════════════════════════════════════

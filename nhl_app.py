@@ -492,17 +492,15 @@ def render_nhl_prediction_result(result: dict, prefix: str = "", game_date: str 
 
     # Verdict
     if conf > 0.75:
-        label, _conf_color = "🔒 LOCK", "#22c55e"
+        label, _css_class = "LOCK", "signal-lock"
     elif conf > 0.65:
-        label, _conf_color = "🔥 HIGH CONFIDENCE", "#22c55e"
+        label, _css_class = "HIGH CONFIDENCE", "signal-strong"
     elif conf > 0.58:
-        label, _conf_color = "✅ MODERATE CONFIDENCE", "#eab308"
+        label, _css_class = "MODERATE", "signal-lean"
     else:
-        label, _conf_color = "⚠️ TOSS-UP", "#94a3b8"
+        label, _css_class = "TOSS-UP", "signal-pass"
     st.markdown(
-        f'<div style="border-left:4px solid {_conf_color};padding:6px 12px;'
-        f'background:{_conf_color}22;border-radius:4px;margin:4px 0">'
-        f'<strong style="color:{_conf_color}">{label}: {winner}</strong> predicted to win</div>',
+        f'<div class="signal-badge {_css_class}">{label}: {winner}</div>',
         unsafe_allow_html=True)
 
     # Vegas comparison
@@ -535,11 +533,11 @@ def render_nhl_prediction_result(result: dict, prefix: str = "", game_date: str 
             full_k = (b * p - (1.0 - p)) / b
             pct = max(0.0, min(full_k * frac, 0.10)) * 100
         except Exception:
-            return 0.0, 'PASS', '⚪ PASS'
-        if pct >= 4.0: return pct, 'STRONG', '💎 STRONG'
-        if pct >= 2.0: return pct, 'LEAN',   '📈 LEAN'
-        if pct >= 1.0: return pct, 'SMALL',  '👀 SMALL'
-        return pct, 'PASS', '⚪ PASS'
+            return 0.0, 'signal-pass', 'PASS'
+        if pct >= 4.0: return pct, 'signal-strong', 'STRONG EDGE'
+        if pct >= 2.0: return pct, 'signal-lean',   'LEAN'
+        if pct >= 1.0: return pct, 'signal-lean',   'SMALL EDGE'
+        return pct, 'signal-pass', 'PASS'
     _kpct_k, _ktier_k, _kbadge_k = _nhl_kelly(_pick_prob_k, _pick_ml_k, frac=_kelly_frac_k)
     _bankroll_val = int(st.session_state.get('nhl_bankroll', 1000))
     if _pick_ml_k < 0:
@@ -567,11 +565,9 @@ def render_nhl_prediction_result(result: dict, prefix: str = "", game_date: str 
                help="Bet size based on selected strategy — adjust in sidebar")
     kc3.metric("Bet Amount",  f"${_bet_amt_k:.0f}",
                help=f"Of your ${_bankroll_val:,} bankroll — adjust bankroll in sidebar")
-    _badge_colors = {'STRONG': '#22c55e', 'LEAN': '#eab308', 'SMALL': '#eab308', 'PASS': '#94a3b8'}
-    _bc = _badge_colors.get(_ktier_k, '#94a3b8')
     kc4.markdown(
         f'<p style="font-size:0.8em;color:gray;margin-bottom:4px">Signal</p>'
-        f'<p style="font-size:1.1em;font-weight:700;color:{_bc};margin:0">{_kbadge_k}</p>',
+        f'<span class="signal-badge {_ktier_k}">{_kbadge_k}</span>',
         unsafe_allow_html=True)
     _ml_display = f"{_pick_ml_k:+.0f}" if _ml_home is not None else "-110 (est.)"
     if _strategy_k == 'Fixed %':
@@ -1711,7 +1707,7 @@ def render_nhl_app():
             st.session_state['sport'] = None
             st.rerun()
     with title_col:
-        st.title("⚡ EdgeIQ — NHL")
+        st.markdown('<div class="edgeiq-logo"><span class="edgeiq-icon">⚡</span> NHL Terminal</div>', unsafe_allow_html=True)
 
     # Load all data
     model, features, accuracy, elo_ratings = load_nhl_model()

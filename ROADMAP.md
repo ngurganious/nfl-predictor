@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-01 (Phase 2 complete, Phase 5 RPL scoped)
+**Last updated:** 2026-03-01 (Phase 5 items 15-17 complete)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -79,9 +79,9 @@
 
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
-| 15 | NFL: Prop selection toggles + "🪜 Build Ladder" button on Player Props tab | Medium | 🔲 | — | Checkbox per prop card · auto-select top 3 by confidence · PRD §3.6.1 |
-| 16 | NFL: Parlay Ladder tab — 4-tier ladder (Banker/Accelerator×2/Moonshot), odds calc, break-even stake sizing | Medium | 🔲 | — | New tab in `final_app.py` · anchor break-even rule · PRD §3.6.2–3.6.6 |
-| 17 | NFL: Correlation filter — same-game conflict detection for ladder legs | Medium | 🔲 | — | Under/under + opposing-side filters · PRD §3.6.5 |
+| 15 | NFL: Prop selection toggles + "🪜 Build Ladder" button on Player Props tab | Medium | ✅ | 2026-03-01 | `final_app.py` Props tab redesigned as game cards · checkboxes per prop/ML/OU · selection counter · cross-game toggle · `apis/odds.py` extended with `get_nfl_events()` + `get_player_props()` |
+| 16 | NFL: Parlay Ladder tab — 4-tier ladder (Banker/Accelerator×2/Moonshot), odds calc, break-even stake sizing | Medium | ✅ | 2026-03-01 | `parlay_math.py` new module · `optimize_tiers()` dynamic sizing · `compute_stakes()` break-even · Gemini mock replaced with real engine · `final_app.py` tab wired |
+| 17 | NFL: Correlation filter — same-game conflict detection for ladder legs | Medium | ✅ | 2026-03-01 | `parlay_math.py` `check_correlations()` · double-under + opposing-QB + general same-game flags · displayed in Ladder tab |
 | 18 | NFL: Backtested ladder ROI from historical prop data | Medium | 🔲 | — | Simulate ladder performance on past prop outcomes · PRD §3.6.7 |
 | 19 | NHL: Parlay Ladder tab (mirrors NFL) | Medium | 🔲 | — | Blocked by NHL Player Props (item 13) · PRD §3.6.8 |
 
