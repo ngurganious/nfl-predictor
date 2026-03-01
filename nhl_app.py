@@ -447,16 +447,17 @@ def run_nhl_prediction(
             ml_implied = abs(moneyline_home) / (abs(moneyline_home) + 100.0)
 
     return {
-        'home_team':     home_team,
-        'away_team':     away_team,
-        'home_win_prob': prob_home,
-        'away_win_prob': prob_away,
-        'ou_pred':       ou_pred,
-        'ou_diff':       ou_diff,
-        'ou_mae':        ou_mae,
-        'vegas_total':   vegas_total,
-        'ml_implied':    ml_implied,
-        'elo_diff':      fv['nhl_elo_diff'].values[0] if 'nhl_elo_diff' in fv.columns else 0.0,
+        'home_team':       home_team,
+        'away_team':       away_team,
+        'home_win_prob':   prob_home,
+        'away_win_prob':   prob_away,
+        'ou_pred':         ou_pred,
+        'ou_diff':         ou_diff,
+        'ou_mae':          ou_mae,
+        'vegas_total':     vegas_total,
+        'ml_implied':      ml_implied,
+        'moneyline_home':  moneyline_home,
+        'elo_diff':        fv['nhl_elo_diff'].values[0] if 'nhl_elo_diff' in fv.columns else 0.0,
     }
 
 
@@ -500,6 +501,52 @@ def render_nhl_prediction_result(result: dict, prefix: str = ""):
         if abs(diff) > 2:
             arrow = "↑" if diff > 0 else "↓"
             st.caption(f"Model: {prob_h*100:.1f}% | Vegas ML implied: {ml_imp*100:.1f}% ({arrow}{abs(diff):.1f}%)")
+
+    # ── Kelly Bet Sizing ─────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 📐 Kelly Bet Sizing")
+    _pick_home_k  = prob_h >= 0.5
+    _pick_prob_k  = prob_h if _pick_home_k else prob_a
+    _pick_label_k = home if _pick_home_k else away
+    _ml_home      = result.get('moneyline_home')
+    if _ml_home is not None:
+        _pick_ml_k = _ml_home if _pick_home_k else -_ml_home
+    else:
+        _pick_ml_k = -110  # fallback: standard line
+    # Kelly formula (half-Kelly, capped at 20%)
+    def _nhl_kelly(p, ml, frac=0.5):
+        try:
+            b = (100.0 / abs(ml)) if ml < 0 else (ml / 100.0)
+            full_k = (b * p - (1.0 - p)) / b
+            pct = max(0.0, min(full_k * frac, 0.20)) * 100
+        except Exception:
+            return 0.0, 'PASS', '⚪ PASS'
+        if pct >= 4.0: return pct, 'STRONG', '💎 STRONG'
+        if pct >= 2.0: return pct, 'LEAN',   '📈 LEAN'
+        if pct >= 1.0: return pct, 'SMALL',  '👀 SMALL'
+        return pct, 'PASS', '⚪ PASS'
+    _kpct_k, _ktier_k, _kbadge_k = _nhl_kelly(_pick_prob_k, _pick_ml_k)
+    _bankroll_val = int(st.session_state.get('nhl_bankroll', 1000))
+    if _pick_ml_k < 0:
+        _vegas_impl_k = abs(_pick_ml_k) / (abs(_pick_ml_k) + 100)
+    else:
+        _vegas_impl_k = 100 / (_pick_ml_k + 100)
+    _edge_k = (_pick_prob_k - _vegas_impl_k) * 100
+    kc1, kc2, kc3, kc4 = st.columns(4)
+    kc1.metric("Model Edge",  f"{_edge_k:+.1f}%",
+               help="Model win prob minus Vegas implied prob for the predicted winner")
+    kc2.metric("Half-Kelly",  f"{_kpct_k:.1f}%",
+               help="Recommended % of bankroll (Half-Kelly criterion)")
+    kc3.metric("Bet Amount",  f"${_bankroll_val * _kpct_k / 100:.0f}",
+               help=f"Of your ${_bankroll_val:,} bankroll — adjust in sidebar")
+    kc4.metric("Signal", _kbadge_k,
+               help="💎 STRONG ≥4% | 📈 LEAN 2-4% | 👀 SMALL 1-2% | ⚪ PASS <1%")
+    _ml_display = f"{_pick_ml_k:+.0f}" if _ml_home is not None else "-110 (est.)"
+    st.caption(
+        f"Betting on **{_pick_label_k}** at {_pick_prob_k*100:.1f}% model confidence | "
+        f"Moneyline: {_ml_display} | Vegas implied: {_vegas_impl_k*100:.1f}% | "
+        f"Half-Kelly caps at 20% of bankroll."
+    )
 
     # O/U prediction
     ou_pred = result.get('ou_pred')
@@ -1216,13 +1263,10 @@ def _render_tab2(model, features, accuracy):
         # ── Kelly Criterion ───────────────────────────────────────────────────
         st.markdown("### Kelly Criterion Simulation")
 
+        bankroll_start = int(st.session_state.get('nhl_bankroll', 1000))
         with st.sidebar:
             st.markdown("---")
             st.markdown("**NHL Kelly Settings**")
-            bankroll_start = st.number_input(
-                "Starting Bankroll ($)", value=1000, min_value=100, step=100,
-                key='nhl_bankroll'
-            )
             kelly_frac = st.select_slider(
                 "Kelly Fraction",
                 options=[0.25, 0.5, 1.0],
@@ -1314,6 +1358,14 @@ def render_nhl_app():
 
     # Sidebar — ELO rankings
     with st.sidebar:
+        st.markdown("### 💰 Bankroll Settings")
+        st.number_input(
+            "My bankroll ($)", min_value=100, max_value=1_000_000,
+            value=st.session_state.get('nhl_bankroll', 1000), step=100,
+            key='nhl_bankroll',
+            help="Used for Kelly bet amount recommendations in game predictions.",
+        )
+        st.markdown("---")
         st.markdown("**📊 NHL ELO Rankings**")
         if elo_ratings:
             from apis.nhl import NHL_TEAMS
