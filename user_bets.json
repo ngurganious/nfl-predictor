@@ -1,0 +1,15 @@
+[
+  {
+    "id": "bet_nhl_nhl_OTT_ANA_2026-03-14_1772396907",
+    "prediction_id": "nhl_OTT_ANA_2026-03-14",
+    "sport": "nhl",
+    "game_date": "2026-03-14",
+    "home_team": "OTT",
+    "away_team": "ANA",
+    "pick": "OTT",
+    "amount": 50.0,
+    "odds": -110,
+    "sportsbook": "DraftKings",
+    "logged_at": "2026-03-01T14:28:27.605317"
+  }
+]
