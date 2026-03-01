@@ -437,6 +437,38 @@ def render_nfl_app():
     
     
     # ══════════════════════════════════════════════════
+    # PARLAY LADDER HELPERS
+    # ══════════════════════════════════════════════════
+
+    def _full_to_abbr(full_name):
+        parts = full_name.strip().split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}.{parts[-1]}"
+        return full_name
+
+    def _prop_confidence(prediction, vegas_line, mae):
+        from scipy.stats import norm
+        if vegas_line is None or vegas_line <= 0 or mae <= 0:
+            return 0.5, 'OVER' if prediction > 0 else 'UNDER', 0.0, 0.5
+        sigma = mae * 1.253
+        edge = prediction - vegas_line
+        z = edge / sigma
+        over_prob = norm.cdf(z)
+        under_prob = 1.0 - over_prob
+        if over_prob >= under_prob:
+            return over_prob, 'OVER', edge, over_prob
+        return under_prob, 'UNDER', edge, over_prob
+
+    def _rpl_add_selection(leg_dict):
+        if 'rpl_selections' not in st.session_state:
+            st.session_state['rpl_selections'] = {}
+        st.session_state['rpl_selections'][leg_dict['leg_id']] = leg_dict
+
+    def _rpl_remove_selection(leg_id):
+        sels = st.session_state.get('rpl_selections', {})
+        sels.pop(leg_id, None)
+
+    # ══════════════════════════════════════════════════
     # WEEKLY SCHEDULE HELPERS  (used by Tab 1)
     # ══════════════════════════════════════════════════
     
@@ -1207,9 +1239,10 @@ def render_nfl_app():
     
     
     # ── Tabs ──────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab_ladder, tab3, tab4, tab5, tab6 = st.tabs([
         "🎯 Game Predictor + Lineups",
         "🏃 Player Props",
+        "🪜 Parlay Ladder",
         "📈 Head-to-Head",
         "🏆 Super Bowl Predictor",
         "📅 Backtesting",
@@ -1925,162 +1958,493 @@ def render_nfl_app():
     # TAB 2: PLAYER PROPS
     # ══════════════════════════════════════════════════
     with tab2:
-        st.header("🏃 Player Prop Predictions")
-        st.caption("Based on recent form (last 4 games) + game conditions")
-    
-        pc1, pc2 = st.columns(2)
-        with pc1:
-            prop_type = st.selectbox("Stat to Predict",
-                ["Passing Yards","Rushing Yards","Receiving Yards"])
-            if prop_type == "Passing Yards":
-                all_players = sorted(passing['passer_player_name'].dropna().unique())
-                default = 'P.Mahomes' if 'P.Mahomes' in all_players else all_players[0]
-            elif prop_type == "Rushing Yards":
-                all_players = sorted(rushing['rusher_player_name'].dropna().unique())
-                default = 'D.Henry' if 'D.Henry' in all_players else all_players[0]
+        st.header("🏃 Player Props + Parlay Builder")
+        _props_mode = st.radio(
+            "props_view_mode", ["This Week's Props", "Manual Entry"],
+            horizontal=True, label_visibility="collapsed",
+        )
+        st.divider()
+
+        if _props_mode == "This Week's Props":
+            # ── Game-card prop selection for Parlay Ladder ────────────
+            schedule = st.session_state.get('weekly_schedule')
+            if schedule is None:
+                st.info("Load the weekly schedule from the **Game Predictor** tab first.")
             else:
-                all_players = sorted(receiving['receiver_player_name'].dropna().unique())
-                default = 'T.Hill' if 'T.Hill' in all_players else all_players[0]
-            player = st.selectbox("Player", all_players,
-                index=all_players.index(default) if default in all_players else 0)
-    
-        with pc2:
-            p_team   = st.selectbox("Player's Team", NFL_TEAMS, key='pt')
-            opp      = st.selectbox("Opponent", NFL_TEAMS, index=1, key='opp')
-            p_home   = st.checkbox("Home game?", value=True)
-            p_roof   = st.selectbox("Stadium", ['outdoors','dome','closed','open'], key='pr')
-            p_outdoor = p_roof in ['outdoors','open']
-            p_temp   = st.slider("Temp", 20, 100, 65, key='ptemp') if p_outdoor else 72
-            p_wind   = st.slider("Wind", 0, 40, 5, key='pwind')    if p_outdoor else 0
-            p_spread = st.slider("Spread", -28.0, 28.0, -3.0, key='pspread')
-            p_line   = st.number_input("Vegas Prop Line (yds)", min_value=0.0,
-                                        max_value=600.0, value=0.0, step=0.5,
-                                        help="Enter the sportsbook over/under line. Leave 0 to skip.")
-    
-        if st.button("🔮 Predict Props", type="primary", use_container_width=True):
-            p_dome  = 1 if p_roof == 'dome' else 0
-            is_home = 1 if p_home else 0
-            pred    = None
-            mae     = None
-    
-            if prop_type == "Passing Yards":
-                s = get_player_recent(passing, 'passer_player_name', player,
-                    ['pass_yards','pass_attempts','completions','pass_tds'])
-                if s:
-                    opp_def = get_opp_pass_defense(opp, def_pass_stats)
-                    f = pd.DataFrame([{
-                        'avg_pass_yards_l4':    s.get('avg_pass_yards_l4', 220),
-                        'avg_pass_attempts_l4': s.get('avg_pass_attempts_l4', 32),
-                        'avg_completions_l4':   s.get('avg_completions_l4', 21),
-                        'avg_pass_tds_l4':      s.get('avg_pass_tds_l4', 1.5),
-                        'temp': p_temp, 'wind': p_wind,
-                        'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
-                        **opp_def,
-                    }])
-                    pred, mae = pass_model.predict(f)[0], 63.3
-    
-            elif prop_type == "Rushing Yards":
-                s = get_player_recent(rushing, 'rusher_player_name', player,
-                    ['rush_yards','rush_attempts','rush_tds'])
-                if s:
-                    opp_def = get_opp_rush_defense(opp, def_rush_stats)
-                    f = pd.DataFrame([{
-                        'avg_rush_yards_l4':    s.get('avg_rush_yards_l4', 55),
-                        'avg_rush_attempts_l4': s.get('avg_rush_attempts_l4', 14),
-                        'avg_rush_tds_l4':      s.get('avg_rush_tds_l4', 0.4),
-                        'temp': p_temp, 'wind': p_wind,
-                        'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
-                        **opp_def,
-                    }])
-                    pred, mae = rush_model.predict(f)[0], 21.2
-    
-            else:
-                s = get_player_recent(receiving, 'receiver_player_name', player,
-                    ['rec_yards','targets','receptions','rec_tds'])
-                if s:
-                    opp_def = get_opp_pass_defense(opp, def_pass_stats)
-                    f = pd.DataFrame([{
-                        'avg_rec_yards_l4':   s.get('avg_rec_yards_l4', 50),
-                        'avg_targets_l4':     s.get('avg_targets_l4', 6),
-                        'avg_receptions_l4':  s.get('avg_receptions_l4', 4),
-                        'avg_rec_tds_l4':     s.get('avg_rec_tds_l4', 0.3),
-                        'temp': p_temp, 'wind': p_wind,
-                        'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
-                        **opp_def,
-                    }])
-                    pred, mae = rec_model.predict(f)[0], 21.3
-    
-            st.divider()
-            if pred is not None and pred > 0:
-                low  = max(0, pred - mae)
-                high = pred + mae
-                m1, m2, m3 = st.columns(3)
-                m1.metric("📉 Low End",    f"{low:.0f} yds")
-                m2.metric("🎯 Projection", f"{pred:.0f} yds")
-                m3.metric("📈 High End",   f"{high:.0f} yds")
-                st.progress(min(float(pred/(high+10)), 1.0))
-                st.caption(f"MAE: ±{mae} yards")
-    
-                # ── Over/Under vs Vegas line ──────────────────────────────────
-                if p_line > 0:
-                    edge     = pred - p_line
-                    lean     = "OVER" if edge > 0 else "UNDER"
-                    edge_abs = abs(edge)
-    
-                    ou_c1, ou_c2, ou_c3 = st.columns(3)
-                    with ou_c1:
-                        st.metric("Model Projection", f"{pred:.0f} yds")
-                    with ou_c2:
-                        st.metric("Vegas Line", f"{p_line:.1f} yds")
-                    with ou_c3:
-                        st.metric("Lean", lean, delta=f"{edge_abs:.1f} yds {lean}")
-    
-                    # Confidence relative to model MAE
-                    # Strong edge = model disagrees with line by >30% of MAE
-                    # (e.g. passing: 19+ yds, rushing/receiving: 6+ yds)
-                    strong_thresh  = mae * 0.30
-                    moderate_thresh = mae * 0.15
-                    if edge_abs >= strong_thresh:
-                        st.success(
-                            f"Strong lean **{lean}** — model projects {pred:.0f} vs line {p_line:.1f} "
-                            f"(edge: {edge_abs:.1f} yds). Model MAE: ±{mae:.0f} yds."
-                        )
-                    elif edge_abs >= moderate_thresh:
-                        st.info(
-                            f"Moderate lean **{lean}** — {edge_abs:.1f} yd edge. "
-                            f"Model MAE ±{mae:.0f} yds — treat with caution."
-                        )
+                # Selection counter + Build Ladder button
+                _rpl_sels = st.session_state.get('rpl_selections', {})
+                _sel_ct = len(_rpl_sels)
+                _sc1, _sc2 = st.columns([6, 2])
+                with _sc1:
+                    if _sel_ct > 0:
+                        _n_games = len(set(v.get('game_label','') for v in _rpl_sels.values()))
+                        st.info(f"🪜 **{_sel_ct} legs selected** from {_n_games} games")
                     else:
-                        st.caption(
-                            f"Slight lean {lean} by {edge_abs:.1f} yds — within model noise. "
-                            f"MAE: ±{mae:.0f} yds. No strong edge detected."
-                        )
-    
-                    if prop_type == "Passing Yards" and p_wind >= 15:
-                        st.caption(f"Wind ({p_wind} mph) suppresses passing — model accounts for this.")
-                    if prop_type == "Rushing Yards" and p_wind >= 20:
-                        st.caption(f"High wind ({p_wind} mph) may shift game to run-heavy — slight upside.")
-    
+                        st.caption("Select legs from game cards below to build a parlay ladder")
+                with _sc2:
+                    if _sel_ct >= 3:
+                        st.success("Switch to **Parlay Ladder** tab to build!")
+
+                # Fetch Vegas prop lines button
+                _fc1, _fc2 = st.columns([4, 4])
+                with _fc1:
+                    _fetch_props = st.button("📡 Fetch Vegas Prop Lines",
+                        help="Calls the Odds API for player prop lines (~17 requests). Cached 4 hours.",
+                        key='rpl_fetch_props')
+                with _fc2:
+                    _quota = None
+                    if pipeline and hasattr(pipeline, 'odds'):
+                        _quota = pipeline.odds.get_quota_cached()
+                    if _quota:
+                        st.caption(f"Odds API: {_quota.get('used','?')}/500 used this month")
+
+                # Fetch event IDs + prop lines if requested
+                if _fetch_props and pipeline and hasattr(pipeline, 'odds'):
+                    with st.spinner("Fetching player prop lines from Odds API..."):
+                        try:
+                            _events = pipeline.odds.get_nfl_events()
+                            _event_map = {}
+                            for _e in _events:
+                                _event_map[f"{_e['home_team']}_{_e['away_team']}"] = _e['event_id']
+                                _event_map[f"{_e['away_team']}_{_e['home_team']}"] = _e['event_id']
+                            _all_vegas_props = {}
+                            for _ek, _eid in _event_map.items():
+                                _raw_props = pipeline.odds.get_player_props(_eid)
+                                for _rp in _raw_props:
+                                    if _rp.get('name') == 'Over':
+                                        _pk = f"{_rp['player']}_{_rp['market']}"
+                                        _all_vegas_props[_pk] = _rp
+                            st.session_state['rpl_vegas_props'] = _all_vegas_props
+                            st.success(f"Fetched prop lines for {len(_all_vegas_props)} player markets")
+                        except Exception as _ex:
+                            st.warning(f"Could not fetch prop lines: {_ex}")
+
+                st.divider()
+
+                # Pre-calculate props for all games
+                if 'rpl_props_precalc_done' not in st.session_state:
+                    _vegas_props = st.session_state.get('rpl_vegas_props', {})
+                    _g_idx = 0
+                    with st.spinner("Pre-calculating player props for all games..."):
+                        for _day, _day_games in schedule.items():
+                            for _gi in _day_games:
+                                _home = _gi.get('home_team', '')
+                                _away = _gi.get('away_team', '')
+                                _pfx = f'g{_g_idx}_'
+                                _cond = st.session_state.get(f'{_pfx}cond', {})
+                                _spread = _cond.get('spread', 0.0)
+                                _temp = _cond.get('temp', 65)
+                                _wind = _cond.get('wind', 5)
+                                _is_dome = 1 if _cond.get('is_dome', False) else 0
+
+                                _props = []
+                                for _team, _is_home in [(_home, 1), (_away, 0)]:
+                                    _opp = _away if _team == _home else _home
+                                    _team_pl = player_lookup.get(_team, {})
+                                    _sp = _spread if _is_home else -_spread
+
+                                    # QB passing
+                                    _qbs = _team_pl.get('QB', [])
+                                    if _qbs:
+                                        _qn = _qbs[0].get('name', '')
+                                        _qa = _full_to_abbr(_qn)
+                                        _qs = get_player_recent(passing, 'passer_player_name', _qa,
+                                            ['pass_yards','pass_attempts','completions','pass_tds'])
+                                        if _qs:
+                                            _od = get_opp_pass_defense(_opp, def_pass_stats)
+                                            _feat = pd.DataFrame([{
+                                                'avg_pass_yards_l4': _qs.get('avg_pass_yards_l4', 220),
+                                                'avg_pass_attempts_l4': _qs.get('avg_pass_attempts_l4', 32),
+                                                'avg_completions_l4': _qs.get('avg_completions_l4', 21),
+                                                'avg_pass_tds_l4': _qs.get('avg_pass_tds_l4', 1.5),
+                                                'temp': _temp, 'wind': _wind,
+                                                'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
+                                                **_od,
+                                            }])
+                                            _pv = pass_model.predict(_feat)[0]
+                                            _mae = 63.3
+                                            _vk = f"{_qn}_player_pass_yds"
+                                            _vp = _vegas_props.get(_vk, {})
+                                            _vl = _vp.get('line')
+                                            _vo = _vp.get('odds', -110)
+                                            _conf, _dir, _edge, _ = _prop_confidence(_pv, _vl, _mae)
+                                            _props.append({
+                                                'player': _qn, 'player_abbr': _qa, 'team': _team, 'opp': _opp,
+                                                'prop_type': 'Passing Yards', 'market': 'player_pass_yds',
+                                                'prediction': round(_pv, 1), 'mae': _mae,
+                                                'vegas_line': _vl, 'odds': _vo,
+                                                'confidence': _conf, 'direction': _dir, 'edge': _edge or 0,
+                                            })
+
+                                    # RBs rushing
+                                    for _rb in _team_pl.get('RB', [])[:2]:
+                                        _rn = _rb.get('name', '')
+                                        _ra = _full_to_abbr(_rn)
+                                        _rs = get_player_recent(rushing, 'rusher_player_name', _ra,
+                                            ['rush_yards','rush_attempts','rush_tds'])
+                                        if _rs:
+                                            _od = get_opp_rush_defense(_opp, def_rush_stats)
+                                            _feat = pd.DataFrame([{
+                                                'avg_rush_yards_l4': _rs.get('avg_rush_yards_l4', 55),
+                                                'avg_rush_attempts_l4': _rs.get('avg_rush_attempts_l4', 14),
+                                                'avg_rush_tds_l4': _rs.get('avg_rush_tds_l4', 0.4),
+                                                'temp': _temp, 'wind': _wind,
+                                                'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
+                                                **_od,
+                                            }])
+                                            _pv = rush_model.predict(_feat)[0]
+                                            _mae = 21.2
+                                            _vk = f"{_rn}_player_rush_yds"
+                                            _vp = _vegas_props.get(_vk, {})
+                                            _vl = _vp.get('line')
+                                            _vo = _vp.get('odds', -110)
+                                            _conf, _dir, _edge, _ = _prop_confidence(_pv, _vl, _mae)
+                                            _props.append({
+                                                'player': _rn, 'player_abbr': _ra, 'team': _team, 'opp': _opp,
+                                                'prop_type': 'Rushing Yards', 'market': 'player_rush_yds',
+                                                'prediction': round(_pv, 1), 'mae': _mae,
+                                                'vegas_line': _vl, 'odds': _vo,
+                                                'confidence': _conf, 'direction': _dir, 'edge': _edge or 0,
+                                            })
+
+                                    # WRs + TE receiving
+                                    _rec_players = _team_pl.get('WR', [])[:2] + _team_pl.get('TE', [])[:1]
+                                    for _wr in _rec_players:
+                                        _wn = _wr.get('name', '')
+                                        _wa = _full_to_abbr(_wn)
+                                        _ws = get_player_recent(receiving, 'receiver_player_name', _wa,
+                                            ['rec_yards','targets','receptions','rec_tds'])
+                                        if _ws:
+                                            _od = get_opp_pass_defense(_opp, def_pass_stats)
+                                            _feat = pd.DataFrame([{
+                                                'avg_rec_yards_l4': _ws.get('avg_rec_yards_l4', 50),
+                                                'avg_targets_l4': _ws.get('avg_targets_l4', 6),
+                                                'avg_receptions_l4': _ws.get('avg_receptions_l4', 4),
+                                                'avg_rec_tds_l4': _ws.get('avg_rec_tds_l4', 0.3),
+                                                'temp': _temp, 'wind': _wind,
+                                                'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
+                                                **_od,
+                                            }])
+                                            _pv = rec_model.predict(_feat)[0]
+                                            _mae = 21.3
+                                            _vk = f"{_wn}_player_reception_yds"
+                                            _vp = _vegas_props.get(_vk, {})
+                                            _vl = _vp.get('line')
+                                            _vo = _vp.get('odds', -110)
+                                            _conf, _dir, _edge, _ = _prop_confidence(_pv, _vl, _mae)
+                                            _props.append({
+                                                'player': _wn, 'player_abbr': _wa, 'team': _team, 'opp': _opp,
+                                                'prop_type': 'Receiving Yards', 'market': 'player_reception_yds',
+                                                'prediction': round(_pv, 1), 'mae': _mae,
+                                                'vegas_line': _vl, 'odds': _vo,
+                                                'confidence': _conf, 'direction': _dir, 'edge': _edge or 0,
+                                            })
+
+                                _props.sort(key=lambda p: p.get('confidence', 0), reverse=True)
+                                st.session_state[f'rpl_g{_g_idx}_props'] = _props[:10]
+
+                                # Game-level bets (ML + O/U)
+                                _game_pred = st.session_state.get(f'{_pfx}pred')
+                                _game_bets = []
+                                if _game_pred:
+                                    _hp = _game_pred.get('home_prob', 0.5)
+                                    _ap = 1.0 - _hp
+                                    _pick_team = _home if _hp >= _ap else _away
+                                    _pick_prob = max(_hp, _ap)
+                                    _ml = _game_pred.get('moneyline') or _spread_to_ml(_spread)
+                                    _game_bets.append({
+                                        'leg_id': f'nfl_{_home}_{_away}_ml',
+                                        'game_id': f'{_away}@{_home}',
+                                        'game_label': f'{_away} @ {_home}',
+                                        'home_team': _home, 'away_team': _away,
+                                        'bet_type': 'ml',
+                                        'description': f'{_pick_team} Moneyline Win',
+                                        'confidence': _pick_prob,
+                                        'direction': 'HOME' if _pick_team == _home else 'AWAY',
+                                        'vegas_line': None,
+                                        'odds': int(_ml) if _ml else -110,
+                                        'market': 'h2h',
+                                        'player': None, 'prop_type': None,
+                                        'model_pred': _pick_prob, 'mae': None,
+                                        'edge': _game_pred.get('edge_pct', 0),
+                                    })
+                                    _ou_pred = _game_pred.get('model_total')
+                                    _ou_line = _game_pred.get('ou_line')
+                                    if _ou_pred and _ou_line:
+                                        _ou_conf, _ou_dir, _ou_edge, _ = _prop_confidence(_ou_pred, _ou_line, 10.01)
+                                        _game_bets.append({
+                                            'leg_id': f'nfl_{_home}_{_away}_ou',
+                                            'game_id': f'{_away}@{_home}',
+                                            'game_label': f'{_away} @ {_home}',
+                                            'home_team': _home, 'away_team': _away,
+                                            'bet_type': 'ou',
+                                            'description': f'{_ou_dir} {_ou_line}',
+                                            'confidence': _ou_conf,
+                                            'direction': _ou_dir,
+                                            'vegas_line': _ou_line,
+                                            'odds': -110,
+                                            'market': 'totals',
+                                            'player': None, 'prop_type': None,
+                                            'model_pred': _ou_pred, 'mae': 10.01,
+                                            'edge': _ou_edge or 0,
+                                        })
+                                st.session_state[f'rpl_g{_g_idx}_game_bets'] = _game_bets
+                                _g_idx += 1
+                    st.session_state['rpl_props_precalc_done'] = True
+
+                # Render game cards
+                _g_idx = 0
+                for _day, _day_games in schedule.items():
+                    if not _day_games:
+                        continue
+                    st.subheader(_day)
+                    for _gi in _day_games:
+                        _home = _gi.get('home_team', '')
+                        _away = _gi.get('away_team', '')
+                        _time = _gi.get('game_time_et', 'TBD')
+                        _pfx = f'rpl_g{_g_idx}_'
+                        _sels = st.session_state.get('rpl_selections', {})
+
+                        # Count legs selected from this game
+                        _gid = f'{_away}@{_home}'
+                        _gc = sum(1 for v in _sels.values() if v.get('game_id') == _gid)
+                        _label = f"{_away} @ {_home}  |  {_time}"
+                        if _gc > 0:
+                            _label += f"  |  🪜 {_gc} legs"
+
+                        with st.expander(_label, expanded=False):
+                            # Game-level bets
+                            _gbets = st.session_state.get(f'rpl_g{_g_idx}_game_bets', [])
+                            if _gbets:
+                                st.markdown("**Game-Level Bets**")
+                                for _bi, _bet in enumerate(_gbets):
+                                    _cbk = f'{_pfx}cb_{_bet["bet_type"]}'
+                                    _in_sel = _bet['leg_id'] in _sels
+                                    _c = st.columns([0.5, 3, 1.5, 1.5, 1])
+                                    with _c[0]:
+                                        _checked = st.checkbox("", key=_cbk, value=_in_sel)
+                                    with _c[1]:
+                                        st.write(_bet['description'])
+                                    with _c[2]:
+                                        st.write(f"Conf: **{_bet['confidence']*100:.1f}%**")
+                                    with _c[3]:
+                                        st.write(f"Edge: {_bet['edge']:+.1f}%")
+                                    with _c[4]:
+                                        _os = f"+{_bet['odds']}" if _bet['odds'] > 0 else str(_bet['odds'])
+                                        st.write(_os)
+                                    if _checked and not _in_sel:
+                                        _rpl_add_selection(_bet)
+                                        st.rerun()
+                                    elif not _checked and _in_sel:
+                                        _rpl_remove_selection(_bet['leg_id'])
+                                        st.rerun()
+                                st.divider()
+
+                            # Player props
+                            _props = st.session_state.get(f'rpl_g{_g_idx}_props', [])
+                            if _props:
+                                st.markdown("**Top Player Props**")
+                                for _pi, _prop in enumerate(_props[:5]):
+                                    _lid = f"nfl_{_home}_{_away}_prop_{_prop['player_abbr']}_{_prop['market']}"
+                                    _cbk = f'{_pfx}cb_prop_{_pi}'
+                                    _in_sel = _lid in _sels
+                                    _c = st.columns([0.5, 2.5, 1.5, 1, 1, 1])
+                                    with _c[0]:
+                                        _checked = st.checkbox("", key=_cbk, value=_in_sel)
+                                    with _c[1]:
+                                        st.write(f"**{_prop['player']}** ({_prop['team']})")
+                                        _vl_str = f"{_prop['vegas_line']:.1f}" if _prop.get('vegas_line') else 'N/A'
+                                        st.caption(f"{_prop['prop_type']} {_prop['direction']} {_vl_str}")
+                                    with _c[2]:
+                                        st.write(f"Pred: **{_prop['prediction']:.0f}** yds")
+                                    with _c[3]:
+                                        st.write(f"**{_prop['confidence']*100:.1f}%**")
+                                    with _c[4]:
+                                        st.write(f"{_prop['edge']:+.1f}")
+                                    with _c[5]:
+                                        _os = f"+{_prop['odds']}" if _prop.get('odds', -110) > 0 else str(_prop.get('odds', -110))
+                                        st.write(_os)
+
+                                    if _checked and not _in_sel:
+                                        _prop_leg = {
+                                            'leg_id': _lid,
+                                            'game_id': _gid,
+                                            'game_label': f'{_away} @ {_home}',
+                                            'home_team': _home, 'away_team': _away,
+                                            'bet_type': 'prop',
+                                            'description': f"{_prop['player']} {_prop['prop_type']} {_prop['direction']} {_vl_str}",
+                                            'confidence': _prop['confidence'],
+                                            'direction': _prop['direction'],
+                                            'vegas_line': _prop.get('vegas_line'),
+                                            'odds': _prop.get('odds', -110),
+                                            'market': _prop['market'],
+                                            'player': _prop['player'],
+                                            'prop_type': _prop['prop_type'],
+                                            'model_pred': _prop['prediction'],
+                                            'mae': _prop['mae'],
+                                            'edge': _prop['edge'],
+                                        }
+                                        _rpl_add_selection(_prop_leg)
+                                        st.rerun()
+                                    elif not _checked and _in_sel:
+                                        _rpl_remove_selection(_lid)
+                                        st.rerun()
+                            else:
+                                st.caption("No prop predictions available for this game")
+
+                        _g_idx += 1
+
+        else:
+            # ── Manual Entry mode (original props UI) ──────────────────
+            st.caption("Based on recent form (last 4 games) + game conditions")
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                prop_type = st.selectbox("Stat to Predict",
+                    ["Passing Yards","Rushing Yards","Receiving Yards"])
                 if prop_type == "Passing Yards":
-                    recent = passing[passing['passer_player_name'] == player]\
-                        .sort_values(['season','week']).tail(5)\
-                        [['season','week','posteam','defteam',
-                          'pass_yards','pass_attempts','completions','pass_tds']]
+                    all_players = sorted(passing['passer_player_name'].dropna().unique())
+                    default = 'P.Mahomes' if 'P.Mahomes' in all_players else all_players[0]
                 elif prop_type == "Rushing Yards":
-                    recent = rushing[rushing['rusher_player_name'] == player]\
-                        .sort_values(['season','week']).tail(5)\
-                        [['season','week','posteam','defteam',
-                          'rush_yards','rush_attempts','rush_tds']]
+                    all_players = sorted(rushing['rusher_player_name'].dropna().unique())
+                    default = 'D.Henry' if 'D.Henry' in all_players else all_players[0]
                 else:
-                    recent = receiving[receiving['receiver_player_name'] == player]\
-                        .sort_values(['season','week']).tail(5)\
-                        [['season','week','posteam','defteam',
-                          'rec_yards','targets','receptions','rec_tds']]
-    
-                st.subheader(f"📋 {player}'s Last 5 Games")
-                st.dataframe(recent.reset_index(drop=True), use_container_width=True)
-            else:
-                st.warning(f"Not enough recent data for {player}.")
+                    all_players = sorted(receiving['receiver_player_name'].dropna().unique())
+                    default = 'T.Hill' if 'T.Hill' in all_players else all_players[0]
+                player = st.selectbox("Player", all_players,
+                    index=all_players.index(default) if default in all_players else 0)
+
+            with pc2:
+                p_team   = st.selectbox("Player's Team", NFL_TEAMS, key='pt')
+                opp      = st.selectbox("Opponent", NFL_TEAMS, index=1, key='opp')
+                p_home   = st.checkbox("Home game?", value=True)
+                p_roof   = st.selectbox("Stadium", ['outdoors','dome','closed','open'], key='pr')
+                p_outdoor = p_roof in ['outdoors','open']
+                p_temp   = st.slider("Temp", 20, 100, 65, key='ptemp') if p_outdoor else 72
+                p_wind   = st.slider("Wind", 0, 40, 5, key='pwind')    if p_outdoor else 0
+                p_spread = st.slider("Spread", -28.0, 28.0, -3.0, key='pspread')
+                p_line   = st.number_input("Vegas Prop Line (yds)", min_value=0.0,
+                                            max_value=600.0, value=0.0, step=0.5,
+                                            help="Enter the sportsbook over/under line. Leave 0 to skip.")
+
+            if st.button("🔮 Predict Props", type="primary", use_container_width=True):
+                p_dome  = 1 if p_roof == 'dome' else 0
+                is_home = 1 if p_home else 0
+                pred    = None
+                mae     = None
+
+                if prop_type == "Passing Yards":
+                    s = get_player_recent(passing, 'passer_player_name', player,
+                        ['pass_yards','pass_attempts','completions','pass_tds'])
+                    if s:
+                        opp_def = get_opp_pass_defense(opp, def_pass_stats)
+                        f = pd.DataFrame([{
+                            'avg_pass_yards_l4':    s.get('avg_pass_yards_l4', 220),
+                            'avg_pass_attempts_l4': s.get('avg_pass_attempts_l4', 32),
+                            'avg_completions_l4':   s.get('avg_completions_l4', 21),
+                            'avg_pass_tds_l4':      s.get('avg_pass_tds_l4', 1.5),
+                            'temp': p_temp, 'wind': p_wind,
+                            'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
+                            **opp_def,
+                        }])
+                        pred, mae = pass_model.predict(f)[0], 63.3
+
+                elif prop_type == "Rushing Yards":
+                    s = get_player_recent(rushing, 'rusher_player_name', player,
+                        ['rush_yards','rush_attempts','rush_tds'])
+                    if s:
+                        opp_def = get_opp_rush_defense(opp, def_rush_stats)
+                        f = pd.DataFrame([{
+                            'avg_rush_yards_l4':    s.get('avg_rush_yards_l4', 55),
+                            'avg_rush_attempts_l4': s.get('avg_rush_attempts_l4', 14),
+                            'avg_rush_tds_l4':      s.get('avg_rush_tds_l4', 0.4),
+                            'temp': p_temp, 'wind': p_wind,
+                            'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
+                            **opp_def,
+                        }])
+                        pred, mae = rush_model.predict(f)[0], 21.2
+
+                else:
+                    s = get_player_recent(receiving, 'receiver_player_name', player,
+                        ['rec_yards','targets','receptions','rec_tds'])
+                    if s:
+                        opp_def = get_opp_pass_defense(opp, def_pass_stats)
+                        f = pd.DataFrame([{
+                            'avg_rec_yards_l4':   s.get('avg_rec_yards_l4', 50),
+                            'avg_targets_l4':     s.get('avg_targets_l4', 6),
+                            'avg_receptions_l4':  s.get('avg_receptions_l4', 4),
+                            'avg_rec_tds_l4':     s.get('avg_rec_tds_l4', 0.3),
+                            'temp': p_temp, 'wind': p_wind,
+                            'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
+                            **opp_def,
+                        }])
+                        pred, mae = rec_model.predict(f)[0], 21.3
+
+                st.divider()
+                if pred is not None and pred > 0:
+                    low  = max(0, pred - mae)
+                    high = pred + mae
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("📉 Low End",    f"{low:.0f} yds")
+                    m2.metric("🎯 Projection", f"{pred:.0f} yds")
+                    m3.metric("📈 High End",   f"{high:.0f} yds")
+                    st.progress(min(float(pred/(high+10)), 1.0))
+                    st.caption(f"MAE: ±{mae} yards")
+
+                    if p_line > 0:
+                        edge     = pred - p_line
+                        lean     = "OVER" if edge > 0 else "UNDER"
+                        edge_abs = abs(edge)
+                        ou_c1, ou_c2, ou_c3 = st.columns(3)
+                        with ou_c1:
+                            st.metric("Model Projection", f"{pred:.0f} yds")
+                        with ou_c2:
+                            st.metric("Vegas Line", f"{p_line:.1f} yds")
+                        with ou_c3:
+                            st.metric("Lean", lean, delta=f"{edge_abs:.1f} yds {lean}")
+
+                        strong_thresh  = mae * 0.30
+                        moderate_thresh = mae * 0.15
+                        if edge_abs >= strong_thresh:
+                            st.success(
+                                f"Strong lean **{lean}** — model projects {pred:.0f} vs line {p_line:.1f} "
+                                f"(edge: {edge_abs:.1f} yds). Model MAE: ±{mae:.0f} yds."
+                            )
+                        elif edge_abs >= moderate_thresh:
+                            st.info(
+                                f"Moderate lean **{lean}** — {edge_abs:.1f} yd edge. "
+                                f"Model MAE ±{mae:.0f} yds — treat with caution."
+                            )
+                        else:
+                            st.caption(
+                                f"Slight lean {lean} by {edge_abs:.1f} yds — within model noise. "
+                                f"MAE: ±{mae:.0f} yds. No strong edge detected."
+                            )
+
+                        if prop_type == "Passing Yards" and p_wind >= 15:
+                            st.caption(f"Wind ({p_wind} mph) suppresses passing — model accounts for this.")
+                        if prop_type == "Rushing Yards" and p_wind >= 20:
+                            st.caption(f"High wind ({p_wind} mph) may shift game to run-heavy — slight upside.")
+
+                    if prop_type == "Passing Yards":
+                        recent = passing[passing['passer_player_name'] == player]\
+                            .sort_values(['season','week']).tail(5)\
+                            [['season','week','posteam','defteam',
+                              'pass_yards','pass_attempts','completions','pass_tds']]
+                    elif prop_type == "Rushing Yards":
+                        recent = rushing[rushing['rusher_player_name'] == player]\
+                            .sort_values(['season','week']).tail(5)\
+                            [['season','week','posteam','defteam',
+                              'rush_yards','rush_attempts','rush_tds']]
+                    else:
+                        recent = receiving[receiving['receiver_player_name'] == player]\
+                            .sort_values(['season','week']).tail(5)\
+                            [['season','week','posteam','defteam',
+                              'rec_yards','targets','receptions','rec_tds']]
+
+                    st.subheader(f"📋 {player}'s Last 5 Games")
+                    st.dataframe(recent.reset_index(drop=True), use_container_width=True)
+                else:
+                    st.warning(f"Not enough recent data for {player}.")
     
     # ══════════════════════════════════════════════════
     # TAB 3: HEAD TO HEAD

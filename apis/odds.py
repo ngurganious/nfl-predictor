@@ -144,6 +144,8 @@ class OddsClient:
                 "Add it to your .env file."
             )
         self.session = requests.Session()
+        self._last_used = None
+        self._last_remaining = None
 
     # ── Internal ─────────────────────────────────────────────────────────
     def _get(self, endpoint: str, params: dict, ttl: int) -> Optional[dict]:
@@ -162,10 +164,15 @@ class OddsClient:
         try:
             resp = self.session.get(url, params=params, timeout=10)
 
-            # Log remaining quota from response headers
+            # Log and store remaining quota from response headers
             remaining = resp.headers.get("x-requests-remaining", "?")
             used      = resp.headers.get("x-requests-used", "?")
             logger.info("Odds API quota — used: %s, remaining: %s", used, remaining)
+            try:
+                self._last_used = int(used)
+                self._last_remaining = int(remaining)
+            except (TypeError, ValueError):
+                pass
 
             if resp.status_code == 429:
                 logger.warning("Odds API rate limit hit. Returning cached or None.")
@@ -443,6 +450,63 @@ class OddsClient:
         except Exception as e:
             logger.error("Odds API quota check failed: %s", e)
             return None
+
+    def get_quota_cached(self):
+        if self._last_used is not None:
+            return {"used": self._last_used, "remaining": self._last_remaining}
+        return None
+
+    # ── Player Prop Markets ──────────────────────────────────────────────
+
+    PROP_MARKETS = "player_pass_yds,player_rush_yds,player_reception_yds"
+
+    def get_nfl_events(self):
+        raw = self._get(
+            f"sports/{SPORT_KEY}/events",
+            {"dateFormat": "iso"},
+            ttl=TTL_ODDS,
+        )
+        if raw is None:
+            return []
+        results = []
+        for event in raw:
+            home_abv = NAME_TO_ABV.get(event.get("home_team", ""), "")
+            away_abv = NAME_TO_ABV.get(event.get("away_team", ""), "")
+            results.append({
+                "event_id": event.get("id", ""),
+                "home_team": home_abv,
+                "away_team": away_abv,
+                "commence_time": event.get("commence_time", ""),
+            })
+        return results
+
+    def get_player_props(self, event_id, markets=None):
+        if markets is None:
+            markets = self.PROP_MARKETS
+        raw = self._get(
+            f"sports/{SPORT_KEY}/events/{event_id}/odds",
+            {"regions": "us", "markets": markets, "oddsFormat": "american"},
+            ttl=TTL_ODDS,
+        )
+        if raw is None:
+            return []
+        bookmakers = raw.get("bookmakers", [])
+        book = _pick_book(bookmakers)
+        if not book:
+            return []
+        props = []
+        for market in book.get("markets", []):
+            market_key = market["key"]
+            for outcome in market.get("outcomes", []):
+                props.append({
+                    "player": outcome.get("description", ""),
+                    "market": market_key,
+                    "name": outcome.get("name", ""),
+                    "line": outcome.get("point"),
+                    "odds": outcome.get("price"),
+                    "book": book["key"],
+                })
+        return props
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

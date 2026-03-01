@@ -662,3 +662,39 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 | NHL player props | ✅ | ❌ | ⚠️ §4.6 — high build |
 | NHL positional matchup engine | ✅ | ❌ | ⚠️ §4.6 — high build |
 | Push notifications | ❌ | ❌ | 🔲 Future |
+
+---
+
+## 5. Division of Labor (Gemini vs. Claude)
+
+### 5.1 Gemini (UI/UX & Design)
+*Focus: The "Front of House"*
+- **Screen Layouts:** Building Streamlit tabs, columns, and containers.
+- **Visual Polish:** CSS hacks, emoji usage, spacing, and information hierarchy.
+- **Mock Data:** Creating realistic JSON/Dictionary structures that simulate API responses.
+- **Marketing:** Writing copy for tooltips, empty states, and "Why EdgeIQ?" explanations.
+- **Prototyping:** Building the "Parlay Ladder" or "Track Record" UI with dummy data to validate the UX before logic is written.
+
+### 5.2 Claude (Backend & Engineering)
+*Focus: The "Back of House"*
+- **Data Pipelines:** Fetching from ESPN/NHL/Odds APIs.
+- **Model Logic:** Training scripts, inference, and feature engineering.
+- **Math:** Implementing the Kelly formulas and Parlay probability calculations accurately.
+- **Wiring:** Replacing Gemini's `mock_data` variables with real function calls.
+
+---
+
+## 6. Mock Data Standards
+
+To ensure smooth handoffs, Gemini must structure mock data to match the canonical schemas defined in `EdgeIQ.md`.
+
+**Rules for Mocks:**
+1. **Do not import backend modules** (e.g., avoid `from apis import x`). Use local dictionaries.
+2. **Use realistic values.** (e.g., NFL scores like 24-17, not 100-5).
+3. **Variable Naming:** Prefix mock variables with `mock_` (e.g., `mock_game_data`).
+4. **Toggle:** When possible, wrap the UI in a function that accepts data as an argument, defaulting to `None`.
+   ```python
+   def render_game_card(game_data=None):
+       data = game_data if game_data else MOCK_GAME_DATA
+       # render UI...
+   ```

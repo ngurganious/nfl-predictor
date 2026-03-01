@@ -1,13 +1,47 @@
 # EdgeIQ — CLAUDE.md
 
-## Project Overview
-A multi-sport ML prediction platform (branded **EdgeIQ**) with NFL and NHL sections. Users can:
-- Predict game outcomes with win probability, spread, and O/U
-- View this week's schedule with pre-calculated predictions on every game card
-- Analyze player props (NFL: passing/rushing/receiving yards)
-- Run backtesting with Kelly Criterion and $10 flat bet simulations
+> **This file is for Claude.** It covers how to work in this codebase.
+> For what EdgeIQ is and its product standards, see `EdgeIQ.md`.
+> For what to build next, see `PRD.md`.
+> For current build progress, see `ROADMAP.md`.
 
-Deployed at Streamlit Community Cloud. Entry point is `app.py`.
+## Workflow Requirements
+- update CLAUDE.md before every git commit
+- always ask claritying questions in planning mode
+- For any architectural decision or model change, use extended thinking before proposing a solution
+
+## Dual-Assistant Workflow
+You are the **Backend & Data Engineer**. Your counterpart is Gemini (**Frontend & Design Lead**).
+
+| Role | Assistant | Responsibilities |
+|------|-----------|------------------|
+| **UI/UX** | **Gemini** | Layouts, CSS styling, marketing copy, and **mock data** prototypes. |
+| **Backend** | **Claude** | API integration, complex math, model training, and **wiring real data** into Gemini's shells. |
+
+**Protocol:**
+1. If Gemini has built a UI with `MOCK_DATA`, your job is to replace it with real function calls.
+2. **Do not refactor** Gemini's UI layout or CSS unless it breaks functionality.
+3. Focus on `apis/`, `models/`, and data pipelines.
+
+## Roadmap Rule (Required)
+After completing **any build item** — no matter how small — you MUST update `ROADMAP.md`:
+1. Change the item's status from `🔲 Not Started` or `🚧 In Progress` → `✅ Done`
+2. Fill in the **Completed** date (use today's date)
+3. Add a one-line **Note** summarizing what file(s) changed and what was done
+4. If a build item is partially complete, mark it `🚧 In Progress` with a note on what remains
+
+This rule applies to ALL build items in the roadmap, including low-effort fixes. Do not batch updates — mark done immediately after each item is finished.
+
+## Project Overview
+EdgeIQ is a multi-sport ML prediction platform (NFL + NHL). Entry point is `app.py`, deployed on Streamlit Community Cloud. See `EdgeIQ.md` for the full product definition.
+
+## Document Map
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | This file — developer instructions for Claude |
+| `EdgeIQ.md` | Product definition, brand, and cross-sport standards |
+| `PRD.md` | Requirements, gap analysis, full build detail |
+| `ROADMAP.md` | Active build tracker — update after every completed item |
 
 ---
 

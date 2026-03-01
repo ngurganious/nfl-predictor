@@ -314,10 +314,27 @@ Every sport with a "star player" impact surface must implement a seasonal qualit
 
 ---
 
-## 11. Document Map
+## 11. Dual-Assistant Workflow
+
+EdgeIQ is built using a parallel "Frontend-First" workflow:
+
+| Role | Assistant | Responsibilities |
+|------|-----------|------------------|
+| **UI/UX & Design** | **Gemini** | Layout, visual styling, component prototyping, marketing copy, and **mock data generation**. Builds the "shell" of the application. |
+| **Backend & Logic** | **Claude** | API integration, model training, complex calculations (Kelly/Parlay math), data persistence, and wiring real data into Gemini's shells. |
+
+**The Handoff Protocol:**
+1. **Gemini** designs the screen using hardcoded `mock_data` dictionaries.
+2. User approves the look, feel, and interaction flow.
+3. **Claude** replaces `mock_data` with actual function calls to `apis/` or `model.pkl`.
+
+---
+
+## 12. Document Map
 
 | File | Purpose | Audience |
 |------|---------|---------|
 | `EdgeIQ.md` | **This file** — product definition, brand, standards | Product / design |
 | `CLAUDE.md` | Developer instructions for Claude Code | Claude AI assistant |
+| `GEMINI.md` | Developer instructions for Gemini Code Assist | Gemini AI assistant |
 | `PRD.md` | Living requirements — what to build next, gap analysis | Planning / build sessions |
