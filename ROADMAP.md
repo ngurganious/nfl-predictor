@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-01 (Phase 1 complete)
+**Last updated:** 2026-03-01 (Phase 2 complete)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -34,10 +34,10 @@
 
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
-| 6 | **Prediction History** — auto-log predictions at render time + results review tab (both sports) | Medium | 🔲 | — | Hook into both `render_*_prediction_result()` · write to `prediction_history.json` · new Results tab · ESPN scoreboard for result backfill · PRD §3.3 / §4.5 |
-| 7 | Daily bet summary panel in sidebar — total bets today, potential win, max loss, EV | Medium | 🔲 | — | Aggregate from pre-calc prediction records; requires Phase 1 bankroll logic · PRD §3.1.4 |
-| 8 | **Bet Tracker** — log placed bets, P&L chart, ROI (both sports) | Medium | 🔲 | — | New tab; pulls base record from Prediction History · `user_bets.json` · Plotly cumulative P&L · PRD §3.4 / §4.6 |
-| 9 | JSON export/import — bankroll settings + bet history + prediction history | Low | 🔲 | — | `st.download_button` + `st.file_uploader` · PRD §3.5 |
+| 6 | **Prediction History** — auto-log predictions at render time + results review tab (both sports) | Medium | ✅ | 2026-03-01 | `prediction_history.py` new module · `log_prediction()` hooked into `render_prediction_result()` (NFL) and `render_nhl_prediction_result()` (NHL) · "📋 Track Record" tab added to both sports · backfill via ESPN/NHL API |
+| 7 | Daily bet summary panel in sidebar — total bets today, potential win, max loss, EV | Medium | ✅ | 2026-03-01 | Added "📊 Today's Summary" section in both sidebars · reads from `prediction_history.json` · shows count, stake, pot. win, EV |
+| 8 | **Bet Tracker** — log placed bets, P&L chart, ROI (both sports) | Medium | ✅ | 2026-03-01 | "💰 Bet Tracker" sub-tab in Track Record · form to log bets · `user_bets.json` · Plotly cumulative P&L chart · ROI metric |
+| 9 | JSON export/import — bankroll settings + bet history + prediction history | Low | ✅ | 2026-03-01 | "📤 Export/Import" sub-tab in Track Record · `st.download_button` (all data / preds only / bets only) · `st.file_uploader` for import |
 
 ---
 

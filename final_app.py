@@ -11,6 +11,12 @@ import warnings
 from datetime import datetime, date
 warnings.filterwarnings('ignore')
 
+try:
+    import prediction_history as _ph
+    _PH_OK = True
+except ImportError:
+    _PH_OK = False
+
 # New weekly-schedule helpers (game_week.py + defensive_matchup.py)
 try:
     from game_week import (
@@ -741,7 +747,7 @@ def render_nfl_app():
         }
     
     
-    def render_prediction_result(result: dict, home_team: str, away_team: str, pfx: str):
+    def render_prediction_result(result: dict, home_team: str, away_team: str, pfx: str, game_date: str = None):
         """Render win-probability metrics, matchup breakdown, and O/U for one game."""
         fph  = result['final_prob_home']
         fpaw = result['final_prob_away']
@@ -847,7 +853,42 @@ def render_nfl_app():
             f"Betting on **{_pick_label_k}** at {_pick_prob_k*100:.1f}% model confidence. "
             f"Vegas implied: {_vegas_impl_k*100:.1f}%. {_caption_extra}"
         )
-    
+
+        # ── Log prediction to history (once per session per game) ────────────
+        if _PH_OK:
+            _log_key = f'{pfx}_logged'
+            if not st.session_state.get(_log_key, False):
+                try:
+                    _ou_res = result.get('ou_result')
+                    _gdate = game_date or date.today().isoformat()
+                    _rec = {
+                        'id': f"nfl_{home_team}_{away_team}_{_gdate}",
+                        'sport': 'nfl',
+                        'game_date': _gdate,
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'predicted_at': datetime.now().isoformat(),
+                        'model_home_prob': round(float(fph), 4),
+                        'vegas_ml_home': _odds_k.get('home_ml'),
+                        'vegas_implied_prob': round(float(_vegas_impl_k), 4),
+                        'model_edge_pct': round(float(_edge_k), 2),
+                        'kelly_signal': _ktier_k,
+                        'kelly_pct': round(float(_kpct_k), 2),
+                        'ou_line': float(_ou_res['line']) if _ou_res else None,
+                        'model_total': float(_ou_res['pred_total']) if _ou_res else None,
+                        'ou_lean': ('OVER' if _ou_res['edge'] > 0 else 'UNDER') if _ou_res else None,
+                        'actual_winner': None,
+                        'actual_score_home': None,
+                        'actual_score_away': None,
+                        'actual_total': None,
+                        'prediction_correct': None,
+                        'ou_correct': None,
+                    }
+                    _ph.log_prediction(_rec)
+                    st.session_state[_log_key] = True
+                except Exception:
+                    pass
+
         with st.expander("Lineup + Matchup Breakdown"):
             lc1, lc2 = st.columns(2)
             with lc1:
@@ -915,6 +956,13 @@ def render_nfl_app():
         away_team  = game_info.get('away_team', 'AWAY')
         game_time  = game_info.get('game_time_et', 'TBD')
         venue      = game_info.get('venue', '')
+
+        # Extract ISO game date for prediction logging
+        _dt_et = game_info.get('datetime_et')
+        try:
+            _game_date = _dt_et.date().isoformat() if _dt_et else date.today().isoformat()
+        except Exception:
+            _game_date = date.today().isoformat()
     
         # Pull cached conditions (spread/O/U/weather) for the collapsed label
         cached_cond = st.session_state.get(f'{pfx}cond', {})
@@ -1155,16 +1203,17 @@ def render_nfl_app():
             pred_result = st.session_state.get(f'{pfx}pred')
             if pred_result:
                 st.divider()
-                render_prediction_result(pred_result, home_team, away_team, pfx)
+                render_prediction_result(pred_result, home_team, away_team, pfx, game_date=_game_date)
     
     
     # ── Tabs ──────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🎯 Game Predictor + Lineups",
         "🏃 Player Props",
         "📈 Head-to-Head",
         "🏆 Super Bowl Predictor",
-        "📅 Backtesting"
+        "📅 Backtesting",
+        "📋 Track Record",
     ])
     
     def _render_manual_entry_tab():
@@ -1709,7 +1758,46 @@ def render_nfl_app():
                     help="Bet this fixed dollar amount per game regardless of model edge"
                 )
             st.caption("Kelly bet amounts update automatically across all game predictions.")
-    
+
+            # ── Daily Summary ───────────────────────────────────────────────
+            if _PH_OK:
+                st.markdown("---")
+                st.markdown("**📊 Today's Summary**")
+                try:
+                    _daily = _ph.get_daily_recs('nfl')
+                    if _daily:
+                        _br = int(st.session_state.get('bankroll', 1000))
+                        _st = st.session_state.get('nfl_bet_strategy', 'Kelly Criterion')
+                        _fp = float(st.session_state.get('nfl_fixed_pct', 2.0))
+                        _fd = int(st.session_state.get('nfl_fixed_dollar', 50))
+                        _rt = st.session_state.get('nfl_risk_tolerance', 'Moderate')
+                        _frac = {'Conservative': 0.25, 'Moderate': 0.5, 'Aggressive': 1.0}[_rt]
+                        _total_stake = 0.0
+                        _total_win = 0.0
+                        _total_ev = 0.0
+                        for _dr in _daily:
+                            _kp = _dr.get('kelly_pct', 0.0)
+                            if _st == 'Fixed %':
+                                _amt = _br * _fp / 100
+                            elif _st == 'Fixed $':
+                                _amt = float(_fd)
+                            else:
+                                _amt = _br * _kp / 100
+                            _ml = _dr.get('vegas_ml_home', -110) or -110
+                            _dec = (1 + 100.0 / abs(_ml)) if _ml < 0 else (1 + _ml / 100.0)
+                            _total_stake += _amt
+                            _total_win += _amt * (_dec - 1)
+                            _total_ev += _amt * (_dr.get('model_edge_pct', 0.0) / 100)
+                        _ds1, _ds2 = st.columns(2)
+                        _ds1.metric("Bets", f"{len(_daily)}")
+                        _ds2.metric("Stake", f"${_total_stake:.0f}")
+                        _ds1.metric("Pot. Win", f"${_total_win:.0f}")
+                        _ds2.metric("EV", f"${_total_ev:+.0f}")
+                    else:
+                        st.caption("No picks logged yet today")
+                except Exception:
+                    pass
+
         btn_col, _, sample_col = st.columns([2, 4, 2])
         with btn_col:
             load_btn = st.button("Load / Refresh Schedule", type="secondary",
@@ -2515,3 +2603,285 @@ def render_nfl_app():
                 f"({_skipped_k} games skipped). Max 2% of bankroll per game. "
                 f"If the Kelly line stays above the flat line, variable sizing is adding value."
             )
+
+    # ══════════════════════════════════════════════════
+    # TAB 6: TRACK RECORD
+    # ══════════════════════════════════════════════════
+    with tab6:
+        st.header("📋 Track Record")
+        st.caption("Auto-logged predictions from this session · Log bets you placed · Export your data")
+        st.divider()
+
+        if not _PH_OK:
+            st.error("prediction_history.py not found — Track Record unavailable.")
+        else:
+            _tr_h, _tr_b, _tr_e = st.tabs(["📊 Prediction History", "💰 Bet Tracker", "📤 Export / Import"])
+
+            # ── Prediction History ────────────────────────────────────────────
+            with _tr_h:
+                _tr_col1, _tr_col2 = st.columns([6, 2])
+                with _tr_col2:
+                    if st.button("🔄 Refresh Results", key='nfl_tr_refresh', use_container_width=True,
+                                 help="Check ESPN for completed games and fill in actual results"):
+                        with st.spinner("Backfilling results..."):
+                            _n = _ph.backfill_results()
+                        if _n:
+                            st.success(f"Updated {_n} game result(s)")
+                        else:
+                            st.info("No new results found")
+
+                _all_preds = _ph.load_predictions()
+                _nfl_preds = [p for p in _all_preds if p.get('sport') == 'nfl']
+
+                if not _nfl_preds:
+                    st.info("No NFL predictions logged yet. Load the schedule and predictions will appear here automatically.")
+                else:
+                    # Filters
+                    _fc1, _fc2, _fc3 = st.columns(3)
+                    with _fc1:
+                        _sig_opts = ["All Signals", "💎 STRONG", "📈 LEAN", "👀 SMALL", "⚪ PASS"]
+                        _sig_filter = st.selectbox("Signal", _sig_opts, key='nfl_tr_sig_filter')
+                    with _fc2:
+                        _out_opts = ["All Outcomes", "✅ Correct", "❌ Incorrect", "⏳ Pending"]
+                        _out_filter = st.selectbox("Outcome", _out_opts, key='nfl_tr_out_filter')
+                    with _fc3:
+                        _sort_opts = ["Newest First", "Oldest First"]
+                        _sort_sel = st.selectbox("Sort", _sort_opts, key='nfl_tr_sort')
+
+                    # Apply filters
+                    _sig_map = {"💎 STRONG": "STRONG", "📈 LEAN": "LEAN", "👀 SMALL": "SMALL", "⚪ PASS": "PASS"}
+                    _fp = _nfl_preds[:]
+                    if _sig_filter != "All Signals":
+                        _fp = [p for p in _fp if p.get('kelly_signal') == _sig_map.get(_sig_filter)]
+                    if _out_filter == "✅ Correct":
+                        _fp = [p for p in _fp if p.get('prediction_correct') is True]
+                    elif _out_filter == "❌ Incorrect":
+                        _fp = [p for p in _fp if p.get('prediction_correct') is False]
+                    elif _out_filter == "⏳ Pending":
+                        _fp = [p for p in _fp if p.get('prediction_correct') is None]
+
+                    _fp.sort(key=lambda x: x.get('predicted_at', ''), reverse=(_sort_sel == "Newest First"))
+
+                    # Build display dataframe
+                    _rows = []
+                    for _p in _fp:
+                        _winner_pred = _p['home_team'] if _p.get('model_home_prob', 0.5) >= 0.5 else _p['away_team']
+                        _correct = _p.get('prediction_correct')
+                        _outcome = "✅" if _correct is True else ("❌" if _correct is False else "⏳")
+                        _actual = _p.get('actual_winner', '—') or '—'
+                        _score = f"{_p.get('actual_score_home','')}-{_p.get('actual_score_away','')}" if _p.get('actual_score_home') is not None else '—'
+                        _badge_map = {'STRONG': '💎', 'LEAN': '📈', 'SMALL': '👀', 'PASS': '⚪'}
+                        _badge = _badge_map.get(_p.get('kelly_signal', 'PASS'), '⚪')
+                        _rows.append({
+                            'Date': _p.get('game_date', ''),
+                            'Matchup': f"{_p['away_team']} @ {_p['home_team']}",
+                            'Pick': _winner_pred,
+                            'Win Prob': f"{_p.get('model_home_prob', 0.5)*100:.1f}%" if _winner_pred == _p['home_team'] else f"{(1-_p.get('model_home_prob',0.5))*100:.1f}%",
+                            'Edge': f"{_p.get('model_edge_pct', 0):+.1f}%",
+                            'Signal': f"{_badge} {_p.get('kelly_signal', 'PASS')}",
+                            'Result': _actual,
+                            'Score': _score,
+                            'O/U': '✅' if _p.get('ou_correct') is True else ('❌' if _p.get('ou_correct') is False else '—'),
+                            '': _outcome,
+                        })
+
+                    _df = pd.DataFrame(_rows)
+                    st.dataframe(_df, use_container_width=True, hide_index=True)
+
+                    # Summary stats
+                    _settled = [p for p in _fp if p.get('prediction_correct') is not None]
+                    if _settled:
+                        st.markdown("---")
+                        _sc1, _sc2, _sc3, _sc4 = st.columns(4)
+                        _hit_rate = sum(1 for p in _settled if p.get('prediction_correct')) / len(_settled)
+                        _sc1.metric("Overall Hit Rate", f"{_hit_rate*100:.1f}%", f"{len(_settled)} settled")
+                        _strong = [p for p in _settled if p.get('kelly_signal') == 'STRONG']
+                        if _strong:
+                            _strong_hr = sum(1 for p in _strong if p.get('prediction_correct')) / len(_strong)
+                            _sc2.metric("💎 STRONG Hit Rate", f"{_strong_hr*100:.1f}%", f"{len(_strong)} bets")
+                        _correct_edges = [p.get('model_edge_pct', 0) for p in _settled if p.get('prediction_correct')]
+                        if _correct_edges:
+                            _sc3.metric("Avg Edge (wins)", f"{sum(_correct_edges)/len(_correct_edges):.1f}%")
+                        _ou_settled = [p for p in _fp if p.get('ou_correct') is not None]
+                        if _ou_settled:
+                            _ou_hr = sum(1 for p in _ou_settled if p.get('ou_correct')) / len(_ou_settled)
+                            _sc4.metric("O/U Hit Rate", f"{_ou_hr*100:.1f}%", f"{len(_ou_settled)} settled")
+
+            # ── Bet Tracker ───────────────────────────────────────────────────
+            with _tr_b:
+                _all_preds_bt = _ph.load_predictions()
+                _nfl_preds_bt = [p for p in _all_preds_bt if p.get('sport') == 'nfl']
+                _all_bets = [b for b in _ph.load_bets() if b.get('sport') == 'nfl']
+
+                # Log a new bet
+                with st.expander("➕ Log a Bet", expanded=not bool(_all_bets)):
+                    if not _nfl_preds_bt:
+                        st.info("No NFL predictions logged yet — load the schedule first.")
+                    else:
+                        _pred_options = {
+                            f"{p['away_team']} @ {p['home_team']} ({p.get('game_date','')})": p['id']
+                            for p in sorted(_nfl_preds_bt, key=lambda x: x.get('game_date',''), reverse=True)
+                        }
+                        with st.form("nfl_log_bet_form"):
+                            _sel_label = st.selectbox("Game", list(_pred_options.keys()), key='nfl_bt_game_sel')
+                            _sel_pred_id = _pred_options[_sel_label]
+                            _sel_pred = next((p for p in _nfl_preds_bt if p['id'] == _sel_pred_id), {})
+                            _home_t = _sel_pred.get('home_team', '')
+                            _away_t = _sel_pred.get('away_team', '')
+                            _bt_c1, _bt_c2 = st.columns(2)
+                            with _bt_c1:
+                                _pick_team = st.selectbox("Bet On", [_home_t, _away_t] if _home_t else ["—"])
+                                _bet_amount = st.number_input("Bet Amount ($)", min_value=1.0, max_value=100_000.0,
+                                                              value=50.0, step=5.0)
+                            with _bt_c2:
+                                _odds_taken = st.number_input("Odds (American)", value=-110, format="%d",
+                                                              help="e.g. -150 for favorite, +130 for underdog")
+                                _sportsbook = st.text_input("Sportsbook", value="DraftKings", max_chars=30)
+                            _submit_bet = st.form_submit_button("Log Bet", type="primary", use_container_width=True)
+                            if _submit_bet:
+                                _bet_rec = {
+                                    'id': f"bet_nfl_{_sel_pred_id}_{int(datetime.now().timestamp())}",
+                                    'prediction_id': _sel_pred_id,
+                                    'sport': 'nfl',
+                                    'game_date': _sel_pred.get('game_date', ''),
+                                    'home_team': _home_t,
+                                    'away_team': _away_t,
+                                    'pick': _pick_team,
+                                    'amount': float(_bet_amount),
+                                    'odds': int(_odds_taken),
+                                    'sportsbook': _sportsbook,
+                                    'logged_at': datetime.now().isoformat(),
+                                }
+                                _ph.log_bet(_bet_rec)
+                                st.success(f"Logged: ${_bet_amount:.0f} on {_pick_team} at {_odds_taken:+d}")
+                                st.rerun()
+
+                # Bets table + P&L
+                if _all_bets:
+                    _pred_lookup = {p['id']: p for p in _nfl_preds_bt}
+                    _bet_rows = []
+                    for _b in sorted(_all_bets, key=lambda x: x.get('logged_at', ''), reverse=True):
+                        _pred = _pred_lookup.get(_b.get('prediction_id', ''), {})
+                        _actual_w = _pred.get('actual_winner')
+                        _result_str = '⏳'
+                        _pnl = None
+                        if _actual_w is not None:
+                            _odds_b = _b.get('odds', -110)
+                            _dec_b = (1 + 100.0 / abs(_odds_b)) if _odds_b < 0 else (1 + _odds_b / 100.0)
+                            if _b.get('pick') == _actual_w:
+                                _pnl = _b['amount'] * (_dec_b - 1)
+                                _result_str = '✅ Win'
+                            else:
+                                _pnl = -_b['amount']
+                                _result_str = '❌ Loss'
+                        _bet_rows.append({
+                            'Date': _b.get('game_date', ''),
+                            'Game': f"{_b.get('away_team','')} @ {_b.get('home_team','')}",
+                            'Pick': _b.get('pick', ''),
+                            'Amount': f"${_b.get('amount', 0):.0f}",
+                            'Odds': f"{_b.get('odds', 0):+d}",
+                            'Book': _b.get('sportsbook', ''),
+                            'Result': _result_str,
+                            'P&L': f"${_pnl:+.0f}" if _pnl is not None else '—',
+                        })
+                    st.dataframe(pd.DataFrame(_bet_rows), use_container_width=True, hide_index=True)
+
+                    # Summary metrics
+                    _settled_bets = [(_b, _pred_lookup.get(_b.get('prediction_id', ''), {}))
+                                     for _b in _all_bets
+                                     if _pred_lookup.get(_b.get('prediction_id', ''), {}).get('actual_winner') is not None]
+                    if _settled_bets:
+                        _total_staked = sum(_b['amount'] for _b, _ in _settled_bets)
+                        _total_pnl = 0.0
+                        for _b, _pred in _settled_bets:
+                            _od = _b.get('odds', -110)
+                            _dec = (1 + 100.0 / abs(_od)) if _od < 0 else (1 + _od / 100.0)
+                            if _b.get('pick') == _pred.get('actual_winner'):
+                                _total_pnl += _b['amount'] * (_dec - 1)
+                            else:
+                                _total_pnl -= _b['amount']
+                        _roi = (_total_pnl / _total_staked * 100) if _total_staked > 0 else 0
+                        _sm1, _sm2, _sm3 = st.columns(3)
+                        _sm1.metric("Total Staked", f"${_total_staked:.0f}")
+                        _sm2.metric("Net P&L", f"${_total_pnl:+.0f}")
+                        _sm3.metric("ROI", f"{_roi:+.1f}%")
+
+                    # P&L chart
+                    _cum_pnl = []
+                    _running = 0.0
+                    for _b in sorted(_all_bets, key=lambda x: x.get('logged_at', '')):
+                        _pred = _pred_lookup.get(_b.get('prediction_id', ''), {})
+                        _aw = _pred.get('actual_winner')
+                        if _aw is not None:
+                            _od = _b.get('odds', -110)
+                            _dec = (1 + 100.0 / abs(_od)) if _od < 0 else (1 + _od / 100.0)
+                            _running += _b['amount'] * (_dec - 1) if _b.get('pick') == _aw else -_b['amount']
+                            _cum_pnl.append({
+                                'Bet #': len(_cum_pnl) + 1,
+                                'Cumulative P&L': round(_running, 2),
+                                'Game': f"{_b.get('away_team','')} @ {_b.get('home_team','')}",
+                            })
+                    if _cum_pnl:
+                        import plotly.express as px
+                        _fig_pnl = px.line(pd.DataFrame(_cum_pnl), x='Bet #', y='Cumulative P&L',
+                                           hover_data=['Game'],
+                                           title='Cumulative P&L (settled bets only)')
+                        _fig_pnl.add_hline(y=0, line_dash='dash', line_color='gray')
+                        _fig_pnl.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(_fig_pnl, use_container_width=True)
+                else:
+                    st.info("No bets logged yet. Expand **Log a Bet** above to record your first bet.")
+
+            # ── Export / Import ───────────────────────────────────────────────
+            with _tr_e:
+                import json as _json
+                _exp_c1, _exp_c2 = st.columns(2)
+                with _exp_c1:
+                    st.markdown("**📥 Export Data**")
+                    _all_p_exp = _ph.load_predictions()
+                    _all_b_exp = _ph.load_bets()
+                    _export_pkg = {'predictions': _all_p_exp, 'bets': _all_b_exp, 'exported_at': datetime.now().isoformat()}
+                    st.download_button(
+                        "Download All Data (JSON)",
+                        data=_json.dumps(_export_pkg, indent=2, default=str),
+                        file_name=f"edgeiq_track_record_{date.today().isoformat()}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                    )
+                    st.download_button(
+                        "Download Predictions Only (JSON)",
+                        data=_json.dumps(_all_p_exp, indent=2, default=str),
+                        file_name=f"edgeiq_predictions_{date.today().isoformat()}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                    )
+                    st.download_button(
+                        "Download Bets Only (JSON)",
+                        data=_json.dumps(_all_b_exp, indent=2, default=str),
+                        file_name=f"edgeiq_bets_{date.today().isoformat()}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                    )
+                with _exp_c2:
+                    st.markdown("**📤 Import Data**")
+                    _up = st.file_uploader("Upload EdgeIQ JSON backup", type=["json"], key='nfl_import_upload')
+                    if _up is not None:
+                        try:
+                            _imported = _json.load(_up)
+                            _imp_preds = _imported.get('predictions', _imported) if isinstance(_imported, dict) else _imported
+                            _imp_bets = _imported.get('bets', []) if isinstance(_imported, dict) else []
+                            if st.button("Confirm Import", key='nfl_confirm_import', type="primary"):
+                                _imp_count_p = 0
+                                for _ip in (_imp_preds if isinstance(_imp_preds, list) else []):
+                                    if _ip.get('id'):
+                                        _ph.log_prediction(_ip)
+                                        _imp_count_p += 1
+                                _imp_count_b = 0
+                                for _ib in (_imp_bets if isinstance(_imp_bets, list) else []):
+                                    if _ib.get('id'):
+                                        _ph.log_bet(_ib)
+                                        _imp_count_b += 1
+                                st.success(f"Imported {_imp_count_p} predictions, {_imp_count_b} bets")
+                                st.rerun()
+                        except Exception as _imp_err:
+                            st.error(f"Import failed: {_imp_err}")
