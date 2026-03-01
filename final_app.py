@@ -896,12 +896,14 @@ def render_nfl_app():
         if wx_flag:
             label_parts.append(f"⚠️ {wx_flag}")
     
-        # Append Kelly badge if a prediction has already been run for this game
+        # Append winner + win% + Kelly badge if a prediction has already been run
         _pred_for_badge = st.session_state.get(f'{pfx}pred')
         if _pred_for_badge:
             _badge_prob_home = float(_pred_for_badge.get('final_prob_home', 0.5))
             _badge_pick_home = _badge_prob_home >= 0.5
             _badge_p  = _badge_prob_home if _badge_pick_home else (1.0 - _badge_prob_home)
+            _badge_winner = home_team if _badge_pick_home else away_team
+            label_parts.append(f"🏈 {_badge_winner} {_badge_p*100:.0f}%")
             # Try live moneyline first, then derive from spread
             _live_ctx_b = st.session_state.get(f'{pfx}live_ctx') or {}
             _odds_b     = _live_ctx_b.get('odds') or {}
