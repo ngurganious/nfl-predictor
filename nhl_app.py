@@ -1160,10 +1160,12 @@ def _render_tab2(model, features, accuracy):
         # ── $10 Moneyline Simulation ──────────────────────────────────────────
         st.markdown("### $10 Moneyline Simulation")
         st.caption(
-            "Simulates betting $10 on each game. Odds are game-specific — derived from "
-            "model probability with standard vig (~4.55%), so heavy favorites pay less on wins."
+            "Simulates betting $10 on each game at standard -110 odds. "
+            "Historical NHL moneylines aren't stored, so -110 is used as a flat proxy "
+            "(break-even = 52.4% accuracy)."
         )
 
+        FLAT_ODDS = -110
         data5_bt = data5.copy()
 
         model_pnl  = 0.0
@@ -1172,19 +1174,12 @@ def _render_tab2(model, features, accuracy):
         home_pnls  = []
 
         for _, row in data5_bt.iterrows():
-            p_home = float(row['prob'])  # P(home wins) from model
-            # Model bets on predicted winner; winner prob = max(p_home, 1-p_home)
-            p_winner = p_home if p_home >= 0.5 else (1.0 - p_home)
-            model_ml = _prob_to_ml(p_winner)
-
             model_won = bool(row['correct'])
-            model_pnl += _ml_pnl(model_ml, model_won)
+            model_pnl += _ml_pnl(FLAT_ODDS, model_won)
             model_pnls.append(model_pnl)
 
-            # Always-home bet: home team's odds (could be + or - depending on game)
-            home_ml = _prob_to_ml(p_home)
             home_won = bool(row['home_win'] == 1)
-            home_pnl += _ml_pnl(home_ml, home_won)
+            home_pnl += _ml_pnl(FLAT_ODDS, home_won)
             home_pnls.append(home_pnl)
 
         n_games = len(data5_bt)
@@ -1196,7 +1191,7 @@ def _render_tab2(model, features, accuracy):
         bt_c2.metric("Always-Home Net P&L", f"${home_pnl:.2f}",
                      delta=f"{home_pnl/total_wagered*100:.1f}% ROI")
         bt_c3.metric("Games Simulated", f"{n_games:,}")
-        st.caption(f"Total wagered: ${total_wagered:,.0f} | Odds: game-specific (model prob + 4.55% vig)")
+        st.caption(f"Total wagered: ${total_wagered:,.0f} | Odds: {FLAT_ODDS} flat (historical lines not stored)")
 
         # Cumulative P&L chart
         try:
@@ -1241,24 +1236,21 @@ def _render_tab2(model, features, accuracy):
         kelly_history = [100.0]
         flat_history  = [100.0]
 
-        for _, row in data5_bt.iterrows():
-            p_home = float(row['prob'])  # P(home wins) from model
-            # p_winner = probability for the team we're betting on (always >= 0.5)
-            p_winner = p_home if p_home >= 0.5 else (1.0 - p_home)
-            # Game-specific moneyline for predicted winner with vig (~4.55%)
-            ml = _prob_to_ml(p_winner)  # always negative (ml < 0) since p_winner >= 0.5
-            b  = 100.0 / abs(ml)        # net profit per $1 wagered (e.g. -110 → b=0.909)
+        KELLY_ODDS = -110
+        b = 100.0 / 110.0  # net profit per $1 at -110 (10/11)
 
+        for _, row in data5_bt.iterrows():
+            p = float(row['prob']) if float(row['prob']) >= 0.5 else (1.0 - float(row['prob']))
             # Kelly formula: f* = (b*p - (1-p)) / b
-            kelly_pct = max(0, (b * p_winner - (1.0 - p_winner)) / b) * kelly_frac
+            kelly_pct = max(0, (b * p - (1.0 - p)) / b) * kelly_frac
             kelly_pct = min(kelly_pct, 0.02)  # cap at 2% per game
             bet = bankroll * kelly_pct
             won = bool(row['correct'])
-            pnl = _ml_pnl(ml, won, stake=bet)
+            pnl = _ml_pnl(KELLY_ODDS, won, stake=bet)
             bankroll += pnl
             bankroll  = max(bankroll, 0.01)
 
-            flat_pnl = _ml_pnl(ml, won, stake=flat_stake)
+            flat_pnl = _ml_pnl(KELLY_ODDS, won, stake=flat_stake)
             flat_bankroll += flat_pnl
             flat_bankroll  = max(flat_bankroll, 0.01)
 
@@ -1272,8 +1264,8 @@ def _render_tab2(model, features, accuracy):
                     delta=f"{(flat_bankroll/bankroll_start - 1)*100:.1f}%")
         k_c3.metric("Kelly Fraction", f"{kelly_frac}×")
         st.caption(
-            "Odds are game-specific (model probability + 4.55% vig). "
-            "Heavy favorites (-200+) require >66% model confidence to generate a positive Kelly bet."
+            "Odds: -110 flat (historical NHL lines not stored — break-even = 52.4% accuracy). "
+            "Kelly bets when model confidence exceeds 52.4%."
         )
 
         try:
