@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-01 (Phase 2 complete)
+**Last updated:** 2026-03-01 (Phase 2 complete, Phase 5 RPL scoped)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -74,6 +74,19 @@
 
 ---
 
+## Phase 5 — Recursive Parlay Ladder (RPL)
+*The feature that moves EdgeIQ from "data tool" to "wealth management tool." Volatility dampening via anchored parlay tiers.*
+
+| # | Item | Effort | Status | Completed | Notes |
+|---|------|--------|--------|-----------|-------|
+| 15 | NFL: Prop selection toggles + "🪜 Build Ladder" button on Player Props tab | Medium | 🔲 | — | Checkbox per prop card · auto-select top 3 by confidence · PRD §3.6.1 |
+| 16 | NFL: Parlay Ladder tab — 4-tier ladder (Banker/Accelerator×2/Moonshot), odds calc, break-even stake sizing | Medium | 🔲 | — | New tab in `final_app.py` · anchor break-even rule · PRD §3.6.2–3.6.6 |
+| 17 | NFL: Correlation filter — same-game conflict detection for ladder legs | Medium | 🔲 | — | Under/under + opposing-side filters · PRD §3.6.5 |
+| 18 | NFL: Backtested ladder ROI from historical prop data | Medium | 🔲 | — | Simulate ladder performance on past prop outcomes · PRD §3.6.7 |
+| 19 | NHL: Parlay Ladder tab (mirrors NFL) | Medium | 🔲 | — | Blocked by NHL Player Props (item 13) · PRD §3.6.8 |
+
+---
+
 ## On Deck (Not Yet Scheduled)
 *Captured in PRD but not prioritized for active development.*
 
@@ -83,5 +96,5 @@
 | NHL: live weather fetch for outdoor games | §4.6 | Open-Meteo already used for NFL — extend for NHL stadiums |
 | NHL: injury feed from NHL API | §4.6 | NHL API has roster/injury data — needs `nhl_data_pipeline.py` |
 | Line movement tracking (opening vs current line) | Appendix | Requires Odds API historical polling — not yet scoped |
-| Parlay builder | Appendix | Not yet scoped |
+| ~~Parlay builder~~ | Appendix | Superseded by Phase 5 — Recursive Parlay Ladder |
 | Push notifications | Appendix | Not feasible in Streamlit — requires external service |

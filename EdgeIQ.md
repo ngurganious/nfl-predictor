@@ -28,7 +28,7 @@
 ## 3. What EdgeIQ Is NOT
 
 - Not a live odds aggregator (we use The Odds API as a data source, not as the product)
-- Not a parlay calculator (flat single-game bets only, for now)
+- Not a generic parlay calculator (EdgeIQ offers structured parlay ladders with model-backed legs, not arbitrary parlays)
 - Not a lock service (no guaranteed picks — confidence tiers make uncertainty explicit)
 - Not real-time (predictions update when the schedule is loaded, not tick-by-tick)
 
@@ -114,7 +114,57 @@ Every sport must have a Backtesting tab with:
 - Expand All / Collapse All controls
 - Predicted winner + win % visible on collapsed card label (no expand required)
 
-### 5.8 Prediction History — Cross-Sport Standard
+### 5.8 Recursive Parlay Ladder (RPL) — "The EdgeIQ Ladder"
+
+> A structured parlay strategy that turns high-confidence props into tiered ladders. The Banker anchor subsidizes longer-shot parlays — break-even by design.
+
+#### Tab & Interaction Flow
+- **"🪜 Parlay Ladder" tab** in both `final_app.py` and `nhl_app.py`
+- **Inline selection on Player Props tab:** each prop card has a toggle/checkbox to add to the ladder. No tab-switching required.
+- **Auto-selection:** Top 3 props by model probability are pre-selected as the Banker base. Remaining eligible props are auto-assigned to successive ladder rungs in descending probability order.
+- **User override:** user can deselect any auto-picked prop or manually add/remove props before building.
+- **Build button:** "🪜 Build Ladder" button on the props tab finalizes selection and navigates to the Parlay Ladder tab with the full ladder rendered.
+
+#### 5.8.1 Leg Eligibility
+- Pool: player props where model confidence **P ≥ 75%** (Lock-tier)
+- Ranked by descending confidence (highest first)
+- Minimum pool: **3 props** for Banker only; **10 props** for a full 4-tier ladder
+
+#### 5.8.2 Tier Structure
+| Tier | Name | Legs | Source | Target Win Rate |
+|------|------|------|--------|-----------------|
+| 1 | **The Safety** ("Banker") | 3 | Top 3 props | ~40–45% |
+| 2 | **The Growth** ("Accelerator") | 5 | Tier 1 + props [4, 5] | ~20–25% |
+| 3 | **The Growth** ("Accelerator") | 7 | Tier 2 + props [6, 7] | ~10–15% |
+| 4 | **The Jackpot** ("Moonshot") | 10 | Tier 3 + props [8, 9, 10] | ~3–5% |
+
+#### 5.8.3 Anchor Break-Even Rule
+The 3-leg Banker payout (at combined parlay odds) **must equal or exceed** the total wager across all four tiers. The most likely hit covers the entire ladder cost.
+
+#### 5.8.4 Correlation Filter
+- Do not combine two "under" props from the same high-scoring projected game
+- Do not combine opposing-side props that conflict (e.g., QB1 over passing + QB2 over passing in a low-total game)
+- Filtered props shown with reason in the ladder view
+
+#### 5.8.5 Stake Sizing
+- Total ladder wager respects **25% max daily exposure** cap (§6)
+- Tier 1 (Banker): largest stake — sized so payout ≥ total ladder cost
+- Tiers 2–4: equal smaller stakes (remaining budget split evenly)
+- Kelly Criterion applies to total ladder allocation, not individual legs
+
+#### 5.8.6 Ladder Tab UI
+| Element | Description |
+|---------|-------------|
+| Ladder summary card | All 4 tiers: legs listed, combined odds, stake, potential payout |
+| Per-tier confidence | Average model probability across legs in that tier |
+| Correlation flags | Filtered-out props with conflict reason |
+| Historical ROI | Backtested ladder ROI from historical prop data |
+| Volatility note | "The 3-leg Banker keeps you in the game while waiting for the 10-leg hit" |
+| Selected props table | All chosen props with rank, game, prop type, model prob, tier assignment |
+
+---
+
+### 5.9 Prediction History — Cross-Sport Standard
 
 > Prediction History is **not** Backtesting. Backtesting re-runs the model on historical data to validate accuracy. Prediction History logs what EdgeIQ predicted *in real use*, so you can audit your actual edge over time.
 

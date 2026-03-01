@@ -288,6 +288,69 @@ A new tab (or sub-section) available in both sports:
 
 ---
 
+### 3.6 Recursive Parlay Ladder (RPL) — "The EdgeIQ Ladder"
+
+**Objective:** Provide a low-risk, high-reward betting structure that uses high-probability "anchors" to subsidize long-shot parlays. This is the feature that moves EdgeIQ from "data tool" to "wealth management tool."
+
+#### 3.6.1 Interaction Flow
+1. **Player Props tab** — each prop card displays a toggle/checkbox to add the prop to the ladder
+2. **Auto-selection** — top 3 props by model probability are pre-selected as the Banker base; remaining eligible props auto-assigned to ladder rungs in descending probability
+3. **User override** — user can deselect any auto-picked prop or manually toggle others on/off
+4. **Build button** — "🪜 Build Ladder" button on the Props tab finalizes selection and navigates to the Parlay Ladder tab with the full ladder rendered
+
+#### 3.6.2 Leg Eligibility
+| Rule | Value |
+|------|-------|
+| Minimum model confidence | P ≥ 75% (Lock-tier only) |
+| Ranking | Descending confidence |
+| Minimum pool (Banker only) | 3 eligible props |
+| Minimum pool (full ladder) | 10 eligible props |
+
+#### 3.6.3 Tier Structure (The Ladder)
+| Tier | Name | Legs | Source Props | Target Hit Rate |
+|------|------|------|-------------|-----------------|
+| 1 | **The Safety** ("Banker") | 3 | Top 3 by confidence | ~40–45% |
+| 2 | **The Growth** ("Accelerator") | 5 | Tier 1 + props [4, 5] | ~20–25% |
+| 3 | **The Growth** ("Accelerator") | 7 | Tier 2 + props [6, 7] | ~10–15% |
+| 4 | **The Jackpot** ("Moonshot") | 10 | Tier 3 + props [8, 9, 10] | ~3–5% |
+
+**Recursion:** each tier is built by appending the next-best props to the previous tier's legs. Tier 2 contains all of Tier 1's legs plus two more — they are nested, not independent.
+
+#### 3.6.4 Anchor Break-Even Rule
+The 3-leg Banker's payout at combined parlay odds must **equal or exceed** the total wager across all four tiers for that week. This is the core risk-management principle: the most likely hit covers the full ladder cost.
+
+#### 3.6.5 Correlation Filter
+| Conflict Type | Rule |
+|---------------|------|
+| Same-game under/under | Do not combine two "under" props from the same high-scoring projected game |
+| Opposing side conflict | Do not combine props that contradict (e.g., QB1 over passing + QB2 over passing in low-total game) |
+| Display | Filtered props shown in the ladder view with conflict reason |
+
+#### 3.6.6 Stake Sizing
+- Total ladder wager respects **25% max daily exposure** cap
+- Tier 1 (Banker): largest stake — reverse-engineered so payout ≥ total ladder cost
+- Tiers 2–4: equal smaller stakes from remaining budget
+- Kelly Criterion governs total ladder allocation (not per-leg)
+
+#### 3.6.7 Parlay Ladder Tab UI
+| Surface | Description |
+|---------|-------------|
+| Ladder summary card | All 4 tiers with legs, combined odds, stake per tier, potential payout |
+| Per-tier confidence | Average model P across legs in that tier |
+| Correlation flags | Props removed by correlation filter, with conflict reason |
+| Suggested stake per tier | Dollar amount based on bankroll + break-even rule |
+| Total Ladder ROI | Backtested from historical prop data |
+| Volatility dampening note | "The 3-leg Banker keeps you in the game while waiting for the 10-leg hit" |
+| Selected props table | All props in ladder: rank, game, player, prop type, model prob, tier |
+
+#### 3.6.8 Dependencies
+- Requires **Player Props** tab (NFL: ✅ built; NHL: ❌ not yet built — §4.6 item 13)
+- Requires prop-level model confidence ≥ 75% threshold for leg eligibility
+- Correlation filter requires historical same-game prop outcome data
+- NHL Ladder depends on NHL Player Props being built first
+
+---
+
 ### 3.4 UI / UX Specifications
 
 #### Layout (target)
@@ -418,7 +481,24 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 
 ---
 
-### 4.6 NHL Parity Gaps (vs NFL)
+### 4.6 Recursive Parlay Ladder (RPL)
+
+| Requirement | NFL | NHL | Gap |
+|-------------|-----|-----|-----|
+| Player props with model confidence | ✅ 3 models (pass/rush/rec) | ❌ No prop models yet | NHL props required first (§4.9 item 13) |
+| Prop selection toggles on Props tab | ❌ | ❌ | New UI — checkbox per prop card, auto-select top 3 |
+| Build Ladder button + navigation | ❌ | ❌ | New — finalizes selection, switches to Ladder tab |
+| Parlay Ladder tab | ❌ | ❌ | Full build — 4-tier ladder card, odds calc, stake sizing |
+| Anchor break-even calculator | ❌ | ❌ | Math: reverse-engineer Banker stake so payout ≥ total ladder cost |
+| Correlation filter | ❌ | ❌ | New — same-game conflict detection from historical prop outcomes |
+| Backtested ladder ROI | ❌ | ❌ | New — simulate historical ladder performance |
+| Tier stake sizing (25% daily cap) | ❌ | ❌ | New — uses existing bankroll + Kelly infrastructure |
+
+**Build priority:** High for NFL (props already exist). NHL blocked by NHL Player Props (§4.9 item 13).
+
+---
+
+### 4.7 NHL Parity Gaps (vs NFL)
 
 | Feature | NFL | NHL | Gap |
 |---------|-----|-----|-----|
@@ -475,6 +555,11 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 | 12 | NHL: Head-to-Head tab | Medium | Mirrors NFL H2H code |
 | 13 | NHL: Player props (goals/assists/shots) | High | New training data + models |
 | 14 | NHL: Positional line matchup engine | High | New feature engineering |
+| 15 | NFL: Prop selection toggles + "Build Ladder" button on Player Props tab | Medium | Player Props tab (already built) |
+| 16 | NFL: Parlay Ladder tab — 4-tier ladder, odds calc, break-even stake sizing | Medium | Item 15 |
+| 17 | NFL: Correlation filter for ladder legs (same-game conflict detection) | Medium | Item 16 + historical prop outcome data |
+| 18 | NFL: Backtested ladder ROI from historical prop data | Medium | Items 16–17 |
+| 19 | NHL: Parlay Ladder tab (mirrors NFL after NHL props built) | Medium | NHL Player Props (item 13) + items 15–18 |
 
 ---
 
@@ -505,7 +590,9 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 | Live weather fetch | ✅ Open-Meteo | ❌ | ⚠️ Gap |
 | Injury feed | ✅ ESPN+Tank01 | ❌ | ⚠️ Gap |
 | Line movement tracking | ❌ | ❌ | 🔲 Planned |
-| Parlay builder | ❌ | ❌ | 🔲 Planned |
+| Recursive Parlay Ladder tab | ❌ | ❌ | 🔲 §3.6 — medium build (NFL: props exist; NHL: blocked by props) |
+| Prop selection toggles (inline on Props tab) | ❌ | ❌ | 🔲 §3.6.1 — medium build |
+| Ladder correlation filter | ❌ | ❌ | 🔲 §3.6.5 — medium build |
 | Prediction History (auto-log + results review) | ❌ | ❌ | 🔲 §3.3 — medium build, cross-sport |
 | Bet tracker / P&L log | ❌ | ❌ | 🔲 §3.4 — medium build (depends on §3.3) |
 | JSON export/import (settings + bets) | ❌ | ❌ | 🔲 §3.5 — trivial |
