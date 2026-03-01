@@ -1,7 +1,7 @@
-# Sports Predictor Pro — CLAUDE.md
+# EdgeIQ — CLAUDE.md
 
 ## Project Overview
-A multi-sport ML prediction platform with NFL and NHL sections. Users can:
+A multi-sport ML prediction platform (branded **EdgeIQ**) with NFL and NHL sections. Users can:
 - Predict game outcomes with win probability, spread, and O/U
 - View this week's schedule with pre-calculated predictions on every game card
 - Analyze player props (NFL: passing/rushing/receiving yards)

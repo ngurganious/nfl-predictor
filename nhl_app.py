@@ -1308,7 +1308,7 @@ def render_nhl_app():
             st.session_state['sport'] = None
             st.rerun()
     with title_col:
-        st.title("🏒 NHL Predictor Pro")
+        st.title("⚡ EdgeIQ — NHL")
 
     # Load all data
     model, features, accuracy, elo_ratings = load_nhl_model()

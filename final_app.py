@@ -347,7 +347,7 @@ def render_nfl_app():
             st.session_state['sport'] = None
             st.rerun()
     with _title_col:
-        st.title("🏈 NFL Predictor Pro")
+        st.title("⚡ EdgeIQ — NFL")
     # ── Header ────────────────────────────────────────
     st.markdown("*25 years of data • ELO ratings • Lineup-adjusted ML predictions • Player props*")
     st.divider()

@@ -1,5 +1,5 @@
 # ============================================================
-# Sports Predictor Pro — Multi-Sport Home Page Router
+# EdgeIQ — Multi-Sport Home Page Router
 # Entry point: streamlit run app.py
 # ============================================================
 
@@ -7,8 +7,8 @@ import streamlit as st
 
 # Must be first Streamlit call
 st.set_page_config(
-    page_title="Sports Predictor Pro",
-    page_icon="🏆",
+    page_title="EdgeIQ",
+    page_icon="⚡",
     layout="wide"
 )
 
@@ -66,7 +66,7 @@ def _render_account_header():
 
 # ── Home page ─────────────────────────────────────────────────────────────────
 def _render_home():
-    st.title("🏆 Sports Predictor Pro")
+    st.title("⚡ EdgeIQ")
     st.markdown("*Machine learning game predictions — powered by decades of historical data*")
     st.divider()
 
