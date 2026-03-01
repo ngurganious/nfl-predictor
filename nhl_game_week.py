@@ -154,9 +154,12 @@ def fetch_nhl_weekly_schedule(nhl_client) -> Dict[str, List[Dict]]:
             'game_type':      gtype,
         }
 
-        if day_of_week not in by_day:
-            by_day[day_of_week] = []
-        by_day[day_of_week].append(game_dict)
+        # Key by "Day Mon DD" (e.g. "Saturday Mar 01") so two different Saturdays
+        # across a week boundary don't get merged into the same section.
+        day_key = f"{day_of_week} {date_label}" if date_label != "TBD" else day_of_week
+        if day_key not in by_day:
+            by_day[day_key] = []
+        by_day[day_key].append(game_dict)
 
     # Sort days by actual date of first game (not by day-of-week name), so that
     # e.g. "Friday Feb 27" appears before "Monday Mar 02" across a week boundary.

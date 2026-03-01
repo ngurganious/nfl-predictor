@@ -964,9 +964,11 @@ def _render_nhl_weekly_schedule(
     for day, games in schedule.items():
         if not games:
             continue
-        # Show date label from first game in day
-        date_lbl = games[0].get('game_date_label', '')
-        st.markdown(f"### {day}  <small style='color:gray'>({date_lbl})</small>",
+        # day key is "DayName Mon DD" (e.g. "Saturday Mar 01") — split for display
+        day_parts = day.split(' ', 1)
+        day_display = day_parts[0]
+        date_lbl = day_parts[1] if len(day_parts) > 1 else games[0].get('game_date_label', '')
+        st.markdown(f"### {day_display}  <small style='color:gray'>({date_lbl})</small>",
                     unsafe_allow_html=True)
         for game in games:
             _render_nhl_game_expander(
