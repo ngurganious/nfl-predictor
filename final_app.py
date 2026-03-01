@@ -390,7 +390,7 @@ def render_nfl_app():
     
         Returns:
             (kelly_pct, tier, badge_str)
-            kelly_pct  — % of bankroll to bet (0–20)
+            kelly_pct  — % of bankroll to bet (0–10)
             tier       — 'STRONG' | 'LEAN' | 'SMALL' | 'PASS'
             badge_str  — emoji label for display
         """
@@ -400,7 +400,7 @@ def render_nfl_app():
             b = (100.0 / abs(moneyline_odds)) if moneyline_odds < 0 else (moneyline_odds / 100.0)
             q = 1.0 - float(model_prob)
             full_kelly = (b * float(model_prob) - q) / b
-            kelly = max(0.0, min(full_kelly * fraction, 0.20))  # cap at 20% bankroll
+            kelly = max(0.0, min(full_kelly * fraction, 0.10))  # cap at 10% bankroll
             pct = kelly * 100.0
         except Exception:
             return 0.0, 'PASS', '⚪ PASS'
@@ -767,9 +767,19 @@ def render_nfl_app():
     
         winner     = home_team if fph > 0.5 else away_team
         confidence = max(fph, fpaw)
-        label      = ("HIGH CONFIDENCE" if confidence > 0.70
-                      else "MODERATE" if confidence > 0.60 else "TOSS-UP")
-        st.markdown(f"**{label}: {winner}**")
+        if confidence > 0.75:
+            label, _conf_color = "🔒 LOCK", "#22c55e"
+        elif confidence > 0.70:
+            label, _conf_color = "🔥 HIGH CONFIDENCE", "#22c55e"
+        elif confidence > 0.60:
+            label, _conf_color = "✅ MODERATE", "#eab308"
+        else:
+            label, _conf_color = "⚠️ TOSS-UP", "#94a3b8"
+        st.markdown(
+            f'<div style="border-left:4px solid {_conf_color};padding:6px 12px;'
+            f'background:{_conf_color}22;border-radius:4px;margin:4px 0">'
+            f'<strong style="color:{_conf_color}">{label}: {winner}</strong></div>',
+            unsafe_allow_html=True)
     
         _lo = result.get('live_odds', {})
         if _lo.get('formatted') and _lo['formatted'] != 'Lines not available':
@@ -782,33 +792,60 @@ def render_nfl_app():
         # ── Kelly Bet Sizing ──────────────────────────────────────────────────────
         st.markdown("---")
         st.markdown("#### 📐 Kelly Bet Sizing")
-        _bankroll_val = int(st.session_state.get('bankroll', 1000))
-        _pick_home_k  = fph >= 0.5
-        _pick_prob_k  = fph if _pick_home_k else fpaw
-        _pick_label_k = home_team if _pick_home_k else away_team
+        _bankroll_val  = int(st.session_state.get('bankroll', 1000))
+        _strategy_k    = st.session_state.get('nfl_bet_strategy', 'Kelly Criterion')
+        _risk_tol_k    = st.session_state.get('nfl_risk_tolerance', 'Moderate')
+        _kelly_frac_k  = {'Conservative': 0.25, 'Moderate': 0.5, 'Aggressive': 1.0}[_risk_tol_k]
+        _fixed_pct_k   = float(st.session_state.get('nfl_fixed_pct', 2.0))
+        _fixed_dol_k   = int(st.session_state.get('nfl_fixed_dollar', 50))
+        _pick_home_k   = fph >= 0.5
+        _pick_prob_k   = fph if _pick_home_k else fpaw
+        _pick_label_k  = home_team if _pick_home_k else away_team
         # Moneyline: prefer live odds, derive from spread if absent
-        _odds_k = result.get('live_odds') or {}
+        _odds_k    = result.get('live_odds') or {}
         _pick_ml_k = _odds_k.get('home_ml') if _pick_home_k else _odds_k.get('away_ml')
         if _pick_ml_k is None:
-            _sprd_k = result.get('spread_line', 0) or 0
+            _sprd_k    = result.get('spread_line', 0) or 0
             _pick_ml_k = _spread_to_ml(float(_sprd_k) if _pick_home_k else -float(_sprd_k))
-        _kpct_k, _ktier_k, _kbadge_k = _kelly_rec(_pick_prob_k, _pick_ml_k)
+        _kpct_k, _ktier_k, _kbadge_k = _kelly_rec(_pick_prob_k, _pick_ml_k, fraction=_kelly_frac_k)
         _vegas_impl_k = (abs(_pick_ml_k) / (abs(_pick_ml_k) + 100)
                          if _pick_ml_k < 0 else 100 / (_pick_ml_k + 100))
         _edge_k = (_pick_prob_k - _vegas_impl_k) * 100
+        # Bet amount + label based on strategy
+        if _strategy_k == 'Fixed %':
+            _bet_amt_k   = _bankroll_val * _fixed_pct_k / 100
+            _pct_label_k = "Fixed %"
+            _pct_val_k   = f"{_fixed_pct_k:.1f}%"
+        elif _strategy_k == 'Fixed $':
+            _bet_amt_k   = float(_fixed_dol_k)
+            _pct_label_k = "Fixed $"
+            _pct_val_k   = f"${_fixed_dol_k}"
+        else:  # Kelly Criterion or Fractional Kelly
+            _bet_amt_k   = _bankroll_val * _kpct_k / 100
+            _pct_label_k = "Kelly %"
+            _pct_val_k   = f"{_kpct_k:.1f}%"
         kc1, kc2, kc3, kc4 = st.columns(4)
         kc1.metric("Model Edge", f"{_edge_k:+.1f}%",
                    help="Model win prob minus Vegas implied prob for the predicted winner")
-        kc2.metric("Half-Kelly", f"{_kpct_k:.1f}%",
-                   help="Recommended fraction of bankroll (Half-Kelly criterion)")
-        kc3.metric("Bet Amount", f"${_bankroll_val * _kpct_k / 100:.0f}",
+        kc2.metric(_pct_label_k, _pct_val_k,
+                   help="Bet size based on selected strategy — adjust in sidebar")
+        kc3.metric("Bet Amount", f"${_bet_amt_k:.0f}",
                    help=f"Of your ${_bankroll_val:,} bankroll — adjust bankroll in sidebar")
-        kc4.metric("Signal", _kbadge_k,
-                   help="💎 STRONG ≥4% | 📈 LEAN 2-4% | 👀 SMALL 1-2% | ⚪ PASS <1%")
+        _badge_colors = {'STRONG': '#22c55e', 'LEAN': '#eab308', 'SMALL': '#eab308', 'PASS': '#94a3b8'}
+        _bc = _badge_colors.get(_ktier_k, '#94a3b8')
+        kc4.markdown(
+            f'<p style="font-size:0.8em;color:gray;margin-bottom:4px">Signal</p>'
+            f'<p style="font-size:1.1em;font-weight:700;color:{_bc};margin:0">{_kbadge_k}</p>',
+            unsafe_allow_html=True)
+        if _strategy_k == 'Fixed %':
+            _caption_extra = f"Fixed {_fixed_pct_k:.1f}% per game regardless of edge."
+        elif _strategy_k == 'Fixed $':
+            _caption_extra = f"Fixed ${_fixed_dol_k} per game regardless of edge."
+        else:
+            _caption_extra = f"{_risk_tol_k} Kelly ({_kelly_frac_k:.2g}×). Kelly caps at 10% of bankroll to limit volatility."
         st.caption(
             f"Betting on **{_pick_label_k}** at {_pick_prob_k*100:.1f}% model confidence. "
-            f"Vegas implied: {_vegas_impl_k*100:.1f}%. "
-            f"Half-Kelly caps at 20% of bankroll to limit volatility."
+            f"Vegas implied: {_vegas_impl_k*100:.1f}%. {_caption_extra}"
         )
     
         with st.expander("Lineup + Matchup Breakdown"):
@@ -1423,10 +1460,19 @@ def render_nfl_app():
     
             winner     = home_team if final_prob_home > 0.5 else away_team
             confidence = max(final_prob_home, final_prob_away)
-            label = ("HIGH CONFIDENCE" if confidence > 0.70
-                     else "MODERATE CONFIDENCE" if confidence > 0.60
-                     else "TOSS-UP")
-            st.subheader(f"{label}: {winner} wins")
+            if confidence > 0.75:
+                label, _conf_color = "🔒 LOCK", "#22c55e"
+            elif confidence > 0.70:
+                label, _conf_color = "🔥 HIGH CONFIDENCE", "#22c55e"
+            elif confidence > 0.60:
+                label, _conf_color = "✅ MODERATE CONFIDENCE", "#eab308"
+            else:
+                label, _conf_color = "⚠️ TOSS-UP", "#94a3b8"
+            st.markdown(
+                f'<div style="border-left:4px solid {_conf_color};padding:6px 12px;'
+                f'background:{_conf_color}22;border-radius:4px;margin:4px 0">'
+                f'<strong style="color:{_conf_color}">{label}: {winner} wins</strong></div>',
+                unsafe_allow_html=True)
     
             # Vegas comparison
             if _live_odds.get('formatted') and _live_odds['formatted'] != 'Lines not available':
@@ -1628,11 +1674,40 @@ def render_nfl_app():
         with st.sidebar:
             st.markdown("### 💰 Bankroll Settings")
             st.number_input(
-                "My bankroll ($)", min_value=100, max_value=1_000_000,
-                value=st.session_state.get('bankroll', 1000), step=100,
+                "My bankroll ($)", min_value=100, max_value=100_000,
+                value=min(st.session_state.get('bankroll', 1000), 100_000), step=100,
                 key='bankroll',
                 help="Set your total betting bankroll. Kelly recommendations will show bet amounts in dollars."
             )
+            st.markdown("---")
+            st.markdown("**🎯 Betting Settings**")
+            _nfl_strat = st.selectbox(
+                "Betting Strategy",
+                options=["Kelly Criterion", "Fixed %", "Fixed $", "Fractional Kelly"],
+                key='nfl_bet_strategy',
+                help="Kelly: model edge × risk tolerance · Fixed %: set % of bankroll · Fixed $: set dollar amount · Fractional Kelly: custom fraction"
+            )
+            st.selectbox(
+                "Risk Tolerance",
+                options=["Conservative", "Moderate", "Aggressive"],
+                index=1,
+                key='nfl_risk_tolerance',
+                help="Conservative 0.25× · Moderate 0.5× · Aggressive 1.0× Kelly multiplier"
+            )
+            if _nfl_strat == "Fixed %":
+                st.number_input(
+                    "Fixed bet (%)", min_value=0.5, max_value=10.0,
+                    value=float(st.session_state.get('nfl_fixed_pct', 2.0)), step=0.5,
+                    key='nfl_fixed_pct',
+                    help="Bet this % of bankroll per game regardless of model edge"
+                )
+            elif _nfl_strat == "Fixed $":
+                st.number_input(
+                    "Fixed bet ($)", min_value=1, max_value=10_000,
+                    value=int(st.session_state.get('nfl_fixed_dollar', 50)), step=10,
+                    key='nfl_fixed_dollar',
+                    help="Bet this fixed dollar amount per game regardless of model edge"
+                )
             st.caption("Kelly bet amounts update automatically across all game predictions.")
     
         btn_col, _, sample_col = st.columns([2, 4, 2])
@@ -1694,8 +1769,9 @@ def render_nfl_app():
 
         # ── Pre-calculate all predictions (once per schedule load) ────────────
         if 'nfl_precalc_done' not in st.session_state:
-            _default_cond   = {'spread_line': 0.0, 'vegas_total': 45.0,
-                               'temp': 65, 'wind': 5, 'is_dome': False}
+            _default_cond   = {'spread': 0.0, 'spread_line': 0.0, 'vegas_total': 45.0,
+                               'temp': 65, 'wind': 5, 'is_dome': False, 'is_grass': False,
+                               'home_rest': 7, 'away_rest': 7}
             _default_lineup = {'qb_score': 65.0, 'wr1_score': 65.0,
                                'rb1_score': 65.0, 'te1_score': 60.0, 'wr2_score': 52.0}
             with st.spinner(f"Pre-calculating predictions for {_total_games_nfl} games..."):
