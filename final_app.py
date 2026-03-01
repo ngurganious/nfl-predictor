@@ -328,13 +328,12 @@ def simulate_ladder_backtest():
         return 1.0 - over_p, 'UNDER', edge
 
     def _process(df, model, feats, target_col, avg_col, mae, prop_type):
-        rows = df.dropna(subset=[avg_col]).copy()
-        extra = [c for c in [target_col, avg_col, 'season', 'week', 'game_id'] if c not in feats]
-        valid = rows[feats + extra].dropna(subset=feats + [target_col, avg_col])
+        keep_cols = list(dict.fromkeys(feats + [target_col, avg_col, 'season', 'week', 'game_id']))
+        valid = df[keep_cols].dropna().copy()
         if valid.empty:
             return pd.DataFrame()
 
-        preds = model.predict(valid[feats])
+        preds = model.predict(valid[feats].values)
         lines = valid[avg_col].values
         actuals = valid[target_col].values
         seasons = valid['season'].values
@@ -2166,8 +2165,8 @@ def render_nfl_app():
                                                 'temp': _temp, 'wind': _wind,
                                                 'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
                                                 **_od,
-                                            }])
-                                            _pv = pass_model.predict(_feat)[0]
+                                            }]).fillna(0)
+                                            _pv = pass_model.predict(_feat.values)[0]
                                             _mae = 63.3
                                             _vk = f"{_qn}_player_pass_yds"
                                             _vp = _vegas_props.get(_vk, {})
@@ -2197,8 +2196,8 @@ def render_nfl_app():
                                                 'temp': _temp, 'wind': _wind,
                                                 'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
                                                 **_od,
-                                            }])
-                                            _pv = rush_model.predict(_feat)[0]
+                                            }]).fillna(0)
+                                            _pv = rush_model.predict(_feat.values)[0]
                                             _mae = 21.2
                                             _vk = f"{_rn}_player_rush_yds"
                                             _vp = _vegas_props.get(_vk, {})
@@ -2230,8 +2229,8 @@ def render_nfl_app():
                                                 'temp': _temp, 'wind': _wind,
                                                 'is_dome': _is_dome, 'is_home': _is_home, 'spread_line': _sp,
                                                 **_od,
-                                            }])
-                                            _pv = rec_model.predict(_feat)[0]
+                                            }]).fillna(0)
+                                            _pv = rec_model.predict(_feat.values)[0]
                                             _mae = 21.3
                                             _vk = f"{_wn}_player_reception_yds"
                                             _vp = _vegas_props.get(_vk, {})
@@ -2451,8 +2450,8 @@ def render_nfl_app():
                             'temp': p_temp, 'wind': p_wind,
                             'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
                             **opp_def,
-                        }])
-                        pred, mae = pass_model.predict(f)[0], 63.3
+                        }]).fillna(0)
+                        pred, mae = pass_model.predict(f.values)[0], 63.3
 
                 elif prop_type == "Rushing Yards":
                     s = get_player_recent(rushing, 'rusher_player_name', player,
@@ -2466,8 +2465,8 @@ def render_nfl_app():
                             'temp': p_temp, 'wind': p_wind,
                             'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
                             **opp_def,
-                        }])
-                        pred, mae = rush_model.predict(f)[0], 21.2
+                        }]).fillna(0)
+                        pred, mae = rush_model.predict(f.values)[0], 21.2
 
                 else:
                     s = get_player_recent(receiving, 'receiver_player_name', player,
@@ -2482,8 +2481,8 @@ def render_nfl_app():
                             'temp': p_temp, 'wind': p_wind,
                             'is_dome': p_dome, 'is_home': is_home, 'spread_line': p_spread,
                             **opp_def,
-                        }])
-                        pred, mae = rec_model.predict(f)[0], 21.3
+                        }]).fillna(0)
+                        pred, mae = rec_model.predict(f.values)[0], 21.3
 
                 st.divider()
                 if pred is not None and pred > 0:
