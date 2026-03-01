@@ -1644,9 +1644,10 @@ def render_nfl_app():
                                     use_container_width=True)
     
         if load_btn:
-            # Clear pre-calc cache so it re-runs with the new schedule
+            # Clear pre-calc cache and all stale per-game predictions
+            import re as _re
             for _k in list(st.session_state.keys()):
-                if _k == 'nfl_precalc_done' or _k == 'nfl_total_games':
+                if _k in ('nfl_precalc_done', 'nfl_total_games') or _re.match(r'^g\d+_', _k):
                     del st.session_state[_k]
             with st.spinner("Loading this week's NFL schedule..."):
                 _sched = {}
@@ -1671,8 +1672,9 @@ def render_nfl_app():
                 st.session_state['weekly_schedule'] = _sched
 
         if sample_btn:
+            import re as _re
             for _k in list(st.session_state.keys()):
-                if _k == 'nfl_precalc_done' or _k == 'nfl_total_games':
+                if _k in ('nfl_precalc_done', 'nfl_total_games') or _re.match(r'^g\d+_', _k):
                     del st.session_state[_k]
             st.session_state['weekly_schedule'] = _sample_week_schedule()
     
