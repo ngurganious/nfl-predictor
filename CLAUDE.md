@@ -149,6 +149,15 @@ For Streamlit Cloud deployment, add both keys in the app's **Secrets** section (
 
 ---
 
+## Git Workflow (Required)
+
+1. **Before making changes** — run `git diff` and `git status` to understand current state, then commit any uncommitted work so there's a clean rollback point
+2. **After making changes** — run `git diff` to review everything before committing; summarize what changed
+3. **Always commit when done** — or explicitly offer to rollback with `git restore` if the changes aren't right
+4. Never leave the repo in a dirty state at the end of a task
+
+---
+
 ## Code Style Rules
 
 - **No type annotations** unless already present in the file
