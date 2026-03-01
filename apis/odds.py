@@ -85,6 +85,48 @@ NAME_TO_ABV = {
 
 ABV_TO_NAME = {v: k for k, v in NAME_TO_ABV.items()}
 
+# ── NHL team name → abbreviation mapping ─────────────────────────────────────
+NHL_NAME_TO_ABV = {
+    "Anaheim Ducks":         "ANA",
+    "Boston Bruins":         "BOS",
+    "Buffalo Sabres":        "BUF",
+    "Calgary Flames":        "CGY",
+    "Carolina Hurricanes":   "CAR",
+    "Chicago Blackhawks":    "CHI",
+    "Colorado Avalanche":    "COL",
+    "Columbus Blue Jackets": "CBJ",
+    "Dallas Stars":          "DAL",
+    "Detroit Red Wings":     "DET",
+    "Edmonton Oilers":       "EDM",
+    "Florida Panthers":      "FLA",
+    "Los Angeles Kings":     "LAK",
+    "Minnesota Wild":        "MIN",
+    "Montreal Canadiens":    "MTL",
+    "Montréal Canadiens":    "MTL",
+    "Nashville Predators":   "NSH",
+    "New Jersey Devils":     "NJD",
+    "New York Islanders":    "NYI",
+    "New York Rangers":      "NYR",
+    "Ottawa Senators":       "OTT",
+    "Philadelphia Flyers":   "PHI",
+    "Pittsburgh Penguins":   "PIT",
+    "San Jose Sharks":       "SJS",
+    "Seattle Kraken":        "SEA",
+    "St. Louis Blues":       "STL",
+    "Tampa Bay Lightning":   "TBL",
+    "Toronto Maple Leafs":   "TOR",
+    "Utah Hockey Club":      "UTA",
+    "Utah Mammoth":          "UTA",
+    "Vancouver Canucks":     "VAN",
+    "Vegas Golden Knights":  "VGK",
+    "Washington Capitals":   "WSH",
+    "Winnipeg Jets":         "WPG",
+}
+
+NHL_ABV_TO_NAME = {v: k for k, v in NHL_NAME_TO_ABV.items()}
+
+NHL_SPORT_KEY = "icehockey_nhl"
+
 
 class OddsClient:
     """
@@ -304,6 +346,81 @@ class OddsClient:
             parts.append(f"ML: {home_team} {h_sign}{home_ml} / {away_team} {a_sign}{away_ml}")
 
         return " | ".join(parts) if parts else "Lines not available"
+
+    def get_nhl_odds(
+        self,
+        markets: str = "h2h,totals",
+        regions: str = "us",
+        odds_format: str = "american",
+    ) -> list:
+        """
+        Fetch all upcoming NHL game odds.
+        Uses 'icehockey_nhl' sport key. Same structure as get_nfl_odds().
+
+        Returns list of game dicts with moneyline and total (puck lines not standard).
+        """
+        raw = self._get(
+            f"sports/{NHL_SPORT_KEY}/odds",
+            {"regions": regions, "markets": markets, "oddsFormat": odds_format},
+            ttl=TTL_ODDS,
+        )
+        if raw is None:
+            return []
+
+        results = []
+        for event in raw:
+            try:
+                home_name = event.get("home_team", "")
+                away_name = event.get("away_team", "")
+                home_abv  = NHL_NAME_TO_ABV.get(home_name, home_name)
+                away_abv  = NHL_NAME_TO_ABV.get(away_name, away_name)
+
+                bookmakers = event.get("bookmakers", [])
+
+                # Extract moneyline (NHL uses h2h, not spreads)
+                ml = None
+                total = None
+                book = _pick_book(bookmakers)
+                if book:
+                    for market in book.get("markets", []):
+                        if market["key"] == "h2h":
+                            outcomes = {o["name"]: o["price"] for o in market.get("outcomes", [])}
+                            ml = {
+                                "home": outcomes.get(home_name),
+                                "away": outcomes.get(away_name),
+                                "book": book["key"],
+                            }
+                        elif market["key"] == "totals":
+                            for outcome in market.get("outcomes", []):
+                                if outcome["name"] == "Over":
+                                    total = {"line": outcome["point"], "book": book["key"]}
+
+                results.append({
+                    "game_id":      event.get("id", ""),
+                    "home_team":    home_abv,
+                    "away_team":    away_abv,
+                    "home_name":    home_name,
+                    "away_name":    away_name,
+                    "commence_time": event.get("commence_time", ""),
+                    "moneyline":    ml,
+                    "total":        total,
+                    "spread":       None,  # NHL doesn't use point spreads
+                })
+            except Exception as e:
+                logger.debug("NHL odds: skipping event — %s", e)
+                continue
+
+        return results
+
+    def get_nhl_game_odds(self, home_team: str, away_team: str) -> Optional[dict]:
+        """Find NHL odds for a specific matchup by team abbreviation."""
+        all_odds = self.get_nhl_odds()
+        for game in all_odds:
+            if game["home_team"] == home_team and game["away_team"] == away_team:
+                return game
+            if game["home_team"] == away_team and game["away_team"] == home_team:
+                return game
+        return None
 
     def check_quota(self) -> Optional[dict]:
         """
