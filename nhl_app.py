@@ -1231,7 +1231,7 @@ def _render_tab2(model, features, accuracy):
 
         bankroll = float(bankroll_start)
         flat_bankroll = float(bankroll_start)
-        flat_stake = bankroll_start * 0.02  # 2% flat bet
+        flat_stake = bankroll_start * 0.005  # 0.5% flat bet
 
         kelly_history = [100.0]
         flat_history  = [100.0]
@@ -1243,7 +1243,7 @@ def _render_tab2(model, features, accuracy):
             p = float(row['prob']) if float(row['prob']) >= 0.5 else (1.0 - float(row['prob']))
             # Kelly formula: f* = (b*p - (1-p)) / b
             kelly_pct = max(0, (b * p - (1.0 - p)) / b) * kelly_frac
-            kelly_pct = min(kelly_pct, 0.02)  # cap at 2% per game
+            kelly_pct = min(kelly_pct, 0.005)  # cap at 0.5% per game
             bet = bankroll * kelly_pct
             won = bool(row['correct'])
             pnl = _ml_pnl(KELLY_ODDS, won, stake=bet)
