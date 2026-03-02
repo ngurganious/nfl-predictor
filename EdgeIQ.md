@@ -40,8 +40,8 @@
 |-------|--------|---------------|------|
 | **NFL** | ✅ Full | 69.3% (26-feature stacking ensemble) | Game Predictor, Player Props, Head-to-Head, Super Bowl Predictor, Backtesting |
 | **NHL** | ✅ Core | 58.0% (29-feature stacking ensemble) | Game Predictor, Backtesting |
+| **MLB** | 🚧 In Progress | — (target: 64–67%) | Game Predictor, Player Props, Backtesting, Parlay Ladder (Phase 6) |
 | NBA | 🔲 Planned | — | — |
-| MLB | 🔲 Planned | — | — |
 
 ---
 

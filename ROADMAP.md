@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-01 (Phase 5 item 18 complete)
+**Last updated:** 2026-03-01 (Phase 6 items 20–22 complete — MLB data pipeline built)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -84,6 +84,27 @@
 | 17 | NFL: Correlation filter — same-game conflict detection for ladder legs | Medium | ✅ | 2026-03-01 | `parlay_math.py` `check_correlations()` · double-under + opposing-QB + general same-game flags · displayed in Ladder tab |
 | 18 | NFL: Backtested ladder ROI from historical prop data | Medium | ✅ | 2026-03-01 | `parlay_math.py` added `simulate_ladder_week()` · `final_app.py` added `simulate_ladder_backtest()` cached function + expander UI in Ladder tab · 156 weeks simulated (2016-2024) · Banker 94%, Accel 75%, Moonshot 53% hit rates |
 | 19 | NHL: Parlay Ladder tab (mirrors NFL) | Medium | 🔲 | — | Blocked by NHL Player Props (item 13) · PRD §3.6.8 |
+
+---
+
+## Phase 6 — MLB Sport
+*Full sport addition: game prediction, player props, backtesting, parlay ladder. Data source: `pybaseball` + MLB Stats API.*
+
+| # | Item | Effort | Status | Completed | Notes |
+|---|------|--------|--------|-----------|-------|
+| 20 | `build_mlb_games.py` — fetch MLB game results 2000–2025 via pybaseball, ELO engine (K=12, home=35 pts) → `mlb_games_processed.csv`, `mlb_elo_ratings.pkl` | High | ✅ | 2026-03-01 | `apis/mlb.py` MLBClient (MLB Stats API) · 60,870 games · 26 cols · 53.7% home win rate · NYY top ELO, COL lowest |
+| 21 | `build_mlb_team_stats.py` — team wOBA, ERA-, FIP-, wRC+ via pybaseball FanGraphs → `mlb_team_stats_current.csv`, `mlb_team_stats_historical.csv` | Medium | ✅ | 2026-03-01 | 780 rows (30 teams × 26 seasons) · 18 cols · 2025 current data available |
+| 22 | `build_mlb_pitcher_ratings.py` — SP quality z-score composite → `mlb_pitcher_ratings.csv`, `mlb_pitcher_team_ratings.csv` | Medium | ✅ | 2026-03-01 | 4,574 pitcher-seasons · ERA-/FIP-/K-BB/WHIP weighted formula · top: Skubal/Wheeler/Sale · bottom: COL starters |
+| 23 | `mlb_feature_engineering.py` — 28-feature matrix (ELO, run-line, wOBA, pitcher diff, form, matchup) | Medium | 🔲 | — | Mirrors `nhl_feature_engineering.py` |
+| 24 | `build_mlb_model.py` — stacking ensemble GBC + RF → LogReg → `model_mlb_enhanced.pkl` | Medium | 🔲 | — | Same architecture as NFL/NHL; target 64–67% accuracy |
+| 25 | `build_mlb_total_model.py` — O/U Ridge regression model → `model_mlb_total.pkl` | Low | 🔲 | — | Same Ridge pattern as NFL/NHL |
+| 26 | `apis/mlb.py` — MLB Stats API client (live schedule, confirmed starters, lineup cards) | Medium | 🔲 | — | Direct requests to `statsapi.mlb.com` — no auth required |
+| 27 | `mlb_game_week.py` — weekly schedule + confirmed SP / batting order helpers | Medium | 🔲 | — | Mirrors `nhl_game_week.py` |
+| 28 | `mlb_app.py` — `render_mlb_app()`: Game Predictor + Backtesting tabs | High | 🔲 | — | Mirrors `nhl_app.py`; full EdgeIQ standards (Kelly, tiers, colors, prediction history) |
+| 29 | Wire `app.py` — add MLB sport card on home page + `sport == 'mlb'` routing | Low | 🔲 | — | Add MLB card alongside NFL/NHL cards |
+| 30 | `build_mlb_player_model.py` — 4 GBR prop models: pitcher K's, earned runs, batter hits, total bases | High | 🔲 | — | Analogous to `build_player_model.py` (NFL) |
+| 31 | MLB: Player Props tab — game cards, prop predictions, selection toggles, Build Ladder button | Medium | 🔲 | — | Mirrors NFL Props tab UI (already built in Phase 5) |
+| 32 | MLB: Parlay Ladder — wire MLB prop legs into `parlay_math.py` (reuse existing engine) | Low | 🔲 | — | `parlay_math.py` already built in Phase 5 — minimal wiring only |
 
 ---
 

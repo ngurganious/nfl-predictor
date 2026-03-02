@@ -1,5 +1,5 @@
 # EdgeIQ — Product Requirements Document
-**Status:** Draft v1.1 — 2026-03-01
+**Status:** Draft v1.2 — 2026-03-01
 **Purpose:** Define cross-sport standards, document what has been built, capture new requirements, and drive gap analysis.
 
 ---
@@ -84,7 +84,7 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 |----------|-------|
 | Output | Model total vs Vegas line + OVER/UNDER lean + edge magnitude |
 | Confidence tiers | Strong (≥4 pts/goals edge) \| Moderate (2–4) \| Slight (<2) |
-| MAE shown | NFL: ±10.01 pts \| NHL: ±1.1 goals |
+| MAE shown | NFL: ±10.01 pts \| NHL: ±1.1 goals \| MLB: ±X runs (TBD after training) |
 
 ### 1.5 Weekly Schedule UI
 | Constant | Value |
@@ -107,10 +107,10 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 ### 1.7 ELO Rating System
 | Constant | Value |
 |----------|-------|
-| ELO update rule | Standard K=20 win/loss (NFL) \| K=6 (NHL, lower volatility) |
-| Home advantage | 48 pts (NFL) \| 28 pts (NHL) |
+| ELO update rule | Standard K=20 win/loss (NFL) \| K=6 (NHL) \| K=12 (MLB) |
+| Home advantage | 48 pts (NFL) \| 28 pts (NHL) \| 35 pts (MLB) |
 | Trend window | 4 games rolling (optimal from ablation) |
-| Season regression | Standard mean-regression at season start |
+| Season regression | Standard mean-regression at season start (0.67 × prev + 0.33 × 1500) |
 
 ### 1.8 Implied Probability Features
 | Constant | Value |
@@ -120,14 +120,16 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 | Moneyline → prob | Standard American odds formula |
 | Both pairs kept | Despite high correlation (r=−0.997); helps tree splits |
 
-### 1.9 "Specialty Rating" (QB / Goalie)
+### 1.9 "Specialty Rating" (QB / Goalie / Starting Pitcher)
 | Constant | Value |
 |----------|-------|
 | Method | Per-(player, season) z-score from historical stats |
-| Training file | `qb_ratings.csv` (NFL) \| `nhl_goalie_ratings.csv` (NHL) |
-| Current season file | `qb_team_ratings.csv` \| `nhl_goalie_team_ratings.csv` |
+| Training file | `qb_ratings.csv` (NFL) \| `nhl_goalie_ratings.csv` (NHL) \| `mlb_pitcher_ratings.csv` (MLB) |
+| Current season file | `qb_team_ratings.csv` \| `nhl_goalie_team_ratings.csv` \| `mlb_pitcher_team_ratings.csv` |
 | Unknown players | Default 0 (league average) |
-| Feature name | `qb_score_diff` (NFL) \| `goalie_quality_diff` (NHL) |
+| Feature name | `qb_score_diff` (NFL) \| `goalie_quality_diff` (NHL) \| `pitcher_quality_diff` (MLB) |
+| MLB formula | `(-era_minus_z) * 0.35 + (-fip_minus_z) * 0.35 + kbb_z * 0.20 + (-whip_z) * 0.10` |
+| MLB minimum | 15 starts per season to qualify |
 
 ### 1.10 Shared Infrastructure
 | Component | Details |
@@ -172,6 +174,24 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 - Day-keyed schedule ("Mon Mar 01") to prevent cross-week duplicates
 - 29-feature stacking ensemble (58% holdout accuracy)
 - NHL API integration (`apis/nhl.py`, api-web.nhle.com/v1)
+
+### 2.3 MLB — Planned Features
+
+**Tabs (planned):**
+1. **Game Predictor** — Weekly schedule (MLB Stats API) or manual entry, confirmed starting pitcher quality panel, run-line + moneyline odds, O/U run total, Kelly sizing
+2. **Player Props** — Pitcher K's, earned runs; batter hits, HR, total bases vs Vegas prop line from Odds API
+3. **Backtesting** — 5-season history, flat + Kelly simulation, Plotly P&L charts
+4. **Parlay Ladder** — Reuses `parlay_math.py` from NFL; MLB props wired as legs
+
+**Unique to MLB:**
+- Starting pitcher quality diff (`pitcher_quality_diff`) — single most impactful feature (more dominant than QB/Goalie)
+- Run line (−1.5) as spread equivalent + standard moneyline
+- Park factor influence on run environment (hitter-friendly vs pitcher-friendly stadiums)
+- Day/night game feature (meaningful split in baseball)
+- ~28-feature stacking ensemble (target accuracy: 64–67%)
+- Player props data source: `pybaseball` (historical training) + MLB Stats API (live)
+
+**Data source:** `pybaseball` Python library (wraps Baseball Reference, FanGraphs, Statcast — free, no auth)
 
 ---
 
@@ -614,54 +634,88 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 | 18 | NFL: Backtested ladder ROI from historical prop data | Medium | Items 16–17 |
 | 19 | NHL: Parlay Ladder tab (mirrors NFL after NHL props built) | Medium | NHL Player Props (item 13) + items 15–18 |
 
+### 4.10 MLB Build Order
+
+| Priority | Item | Effort | Dependency |
+|----------|------|--------|------------|
+| 20 | `build_mlb_games.py` — fetch MLB game results 2000–2025 via pybaseball, compute ELO (K=12, home adv=35 pts) → `mlb_games_processed.csv`, `mlb_elo_ratings.pkl` | High | Add `pybaseball` to requirements |
+| 21 | `build_mlb_team_stats.py` — team wOBA, ERA-, FIP-, wRC+ via pybaseball FanGraphs → `mlb_team_stats_current.csv`, `mlb_team_stats_historical.csv` | Medium | Item 20 |
+| 22 | `build_mlb_pitcher_ratings.py` — SP quality z-score (ERA-, FIP-, K/BB, WHIP) → `mlb_pitcher_ratings.csv`, `mlb_pitcher_team_ratings.csv` | Medium | pybaseball |
+| 23 | `mlb_feature_engineering.py` — 28-feature matrix (ELO, run-line, wOBA, pitcher diff, form, matchup) | Medium | Items 20–22 |
+| 24 | `build_mlb_model.py` — stacking ensemble GBC + RF → LogReg → `model_mlb_enhanced.pkl` | Medium | Item 23 |
+| 25 | `build_mlb_total_model.py` — O/U Ridge regression model → `model_mlb_total.pkl` | Low | Items 20–22 |
+| 26 | `apis/mlb.py` — MLB Stats API client (live schedule, confirmed starters, lineup cards) | Medium | None |
+| 27 | `mlb_game_week.py` — weekly schedule + rotation/batting order helpers | Medium | Item 26 |
+| 28 | `mlb_app.py` — `render_mlb_app()` — Game Predictor + Backtesting tabs | High | Items 24–27 |
+| 29 | Wire `app.py` router — add MLB sport card + `sport == 'mlb'` routing | Low | Item 28 |
+| 30 | `build_mlb_player_model.py` — 4 GBR prop models: pitcher K's, earned runs, batter hits, total bases | High | Items 20–22 |
+| 31 | MLB: Player Props tab — game cards, prop predictions, selection toggles, Build Ladder button | Medium | Item 30 |
+| 32 | MLB: Parlay Ladder — wire MLB prop legs into `parlay_math.py` (reuse existing engine) | Low | Item 31 |
+
+**MLB Feature Set (~28 features):**
+| Category | Features |
+|----------|---------|
+| Core Vegas | `run_line` (−1.5), `moneyline_implied_prob`, `run_line_implied_prob` |
+| ELO | `mlb_elo_diff`, `mlb_elo_implied_prob`, `home_mlb_elo_trend`, `away_mlb_elo_trend` |
+| Form (L5 games) | `home_l5_runs_for`, `away_l5_runs_for`, `home_l5_runs_against`, `away_l5_runs_against`, `home_l5_run_diff`, `away_l5_run_diff` |
+| Matchup cross-features | `matchup_adv_home`, `matchup_adv_away`, `net_matchup_adv` |
+| Pitcher quality | `pitcher_quality_diff` (home SP − away SP z-score) |
+| Team offense | `home_woba`, `away_woba`, `home_wrc_plus`, `away_wrc_plus` |
+| Team pitching | `home_era_minus`, `away_era_minus`, `home_fip_minus`, `away_fip_minus` |
+| Win rate | `home_l10_wins`, `away_l10_wins`, `win_pct_advantage` |
+| Context | `is_day_game` |
+
+**MLB Player Prop Models (4 GBR models):**
+| Prop | Key Predictive Features |
+|------|------------------------|
+| Pitcher strikeouts (K) | SP K/9, batter team K%, park K factor, projected game total |
+| Pitcher earned runs | FIP, opposing wOBA, lineup protection score |
+| Batter hits | Batter BA vs pitcher handedness, park hit factor, pitcher BAA |
+| Batter total bases | ISO, SLG, park HR factor, vs pitcher GB% |
+
 ---
 
 ## Appendix: Feature Comparison Matrix
 
-| Feature | NFL | NHL | Standard? |
-|---------|-----|-----|-----------|
-| Weekly schedule view | ✅ | ✅ | ✅ Yes |
-| Manual entry mode | ✅ | ✅ | ✅ Yes |
-| Win probability (bar + tiers) | ✅ | ✅ | ✅ Yes |
-| Vegas ML implied prob | ✅ | ✅ | ✅ Yes |
-| O/U prediction + lean | ✅ | ✅ | ✅ Yes |
-| Kelly bet sizing (game cards) | ✅ | ✅ | ✅ Yes |
-| Kelly backtesting simulation | ✅ | ✅ | ✅ Yes |
-| Predicted winner on card label | ✅ | ✅ | ✅ Yes |
-| Expand All / Collapse All | ✅ | ✅ | ✅ Yes |
-| 5-season backtesting | ✅ | ✅ | ✅ Yes |
-| Specialty rating (QB/Goalie) | ✅ QB | ✅ Goalie | ✅ Yes |
-| ELO rating system | ✅ | ✅ | ✅ Yes |
-| Stacking ensemble model | ✅ | ✅ | ✅ Yes |
-| Depth chart / lineup view | ✅ 14+10 pos | ✅ 6fwd+4def+2G | ✅ Yes |
-| Live data APIs (weather/odds) | ✅ (5 APIs) | ❌ (NHL API only) | ⚠️ Gap |
-| Vegas odds integration | ✅ Odds API | ❌ Manual input only | ⚠️ Gap |
-| Player props tab | ✅ 3 models | ❌ None | ⚠️ Gap |
-| Positional matchup engine | ✅ 6 positions | ❌ None | ⚠️ Gap |
-| Championship simulator | ✅ Super Bowl | ❌ None | ⚠️ Gap |
-| Head-to-head tab | ✅ | ❌ | ⚠️ Gap |
-| Live weather fetch | ✅ Open-Meteo | ❌ | ⚠️ Gap |
-| Injury feed | ✅ ESPN+Tank01 | ❌ | ⚠️ Gap |
-| Line movement tracking | ❌ | ❌ | 🔲 Planned |
-| Recursive Parlay Ladder tab | ❌ | ❌ | 🔲 §3.6 — medium build (NFL: props exist; NHL: blocked by props) |
-| Prop selection toggles (inline on Props tab) | ❌ | ❌ | 🔲 §3.6.1 — medium build |
-| Ladder correlation filter | ❌ | ❌ | 🔲 §3.6.5 — medium build |
-| Prediction History (auto-log + results review) | ❌ | ❌ | 🔲 §3.3 — medium build, cross-sport |
-| Bet tracker / P&L log | ❌ | ❌ | 🔲 §3.4 — medium build (depends on §3.3) |
-| JSON export/import (settings + bets) | ❌ | ❌ | 🔲 §3.5 — trivial |
-| Betting strategy selector (4 modes) | ✅ | ✅ | ✅ Done — Phase 1 |
-| Risk tolerance slider | ✅ | ✅ | ✅ Done — Phase 1 |
-| Daily bet summary (sidebar) | ❌ | ❌ | 🔲 §3.1.4 — medium build |
-| "Lock" badge >75% confidence | ✅ | ✅ | ✅ Done — Phase 1 |
-| Standardized bet signal colors | ✅ | ✅ | ✅ Done — Phase 1 |
-| Bankroll min/max validation | ✅ | ✅ | ✅ Done — Phase 1 (bundled) |
-| Standardized Kelly cap (10%) | ✅ | ✅ | ✅ Done — Phase 1 |
-| Stanley Cup Predictor tab | ❌ | ❌ | 🔲 §3.2.2 — medium build |
-| NHL Head-to-Head tab | ✅ | ❌ | ⚠️ §4.6 — medium build |
-| NHL Vegas odds integration | ✅ | ❌ | ⚠️ §4.6 — medium build |
-| NHL player props | ✅ | ❌ | ⚠️ §4.6 — high build |
-| NHL positional matchup engine | ✅ | ❌ | ⚠️ §4.6 — high build |
-| Push notifications | ❌ | ❌ | 🔲 Future |
+| Feature | NFL | NHL | MLB | Standard? |
+|---------|-----|-----|-----|-----------|
+| Weekly schedule view | ✅ | ✅ | 🔲 #27 | ✅ Yes |
+| Manual entry mode | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Win probability (bar + tiers) | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Vegas ML implied prob | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| O/U prediction + lean | ✅ | ✅ | 🔲 #25 | ✅ Yes |
+| Kelly bet sizing (game cards) | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Kelly backtesting simulation | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Predicted winner on card label | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Expand All / Collapse All | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| 5-season backtesting | ✅ | ✅ | 🔲 #28 | ✅ Yes |
+| Specialty rating (QB/Goalie/SP) | ✅ QB | ✅ Goalie | 🔲 SP #22 | ✅ Yes |
+| ELO rating system | ✅ | ✅ | 🔲 #20 | ✅ Yes |
+| Stacking ensemble model | ✅ | ✅ | 🔲 #24 | ✅ Yes |
+| Depth chart / lineup view | ✅ 14+10 pos | ✅ 6fwd+4def+2G | 🔲 SP/lineup #27 | ✅ Yes |
+| Live data APIs | ✅ (5 APIs) | ❌ (NHL API only) | 🔲 pybaseball+MLB API | ⚠️ Gap |
+| Vegas odds integration | ✅ Odds API | ❌ Manual only | 🔲 Odds API #28 | ⚠️ Gap |
+| Player props tab | ✅ 3 models | ❌ None | 🔲 4 models #30–31 | ⚠️ Gap |
+| Positional matchup engine | ✅ 6 positions | ❌ None | ❌ Not planned | ⚠️ Gap |
+| Championship simulator | ✅ Super Bowl | ❌ None | ❌ Not planned (v2) | ⚠️ Gap |
+| Head-to-head tab | ✅ | ❌ | ❌ Not planned (v2) | ⚠️ Gap |
+| Live weather fetch | ✅ Open-Meteo | ❌ | ❌ Not planned | ⚠️ Gap |
+| Injury feed | ✅ ESPN+Tank01 | ❌ | ❌ Not planned (v2) | ⚠️ Gap |
+| Parlay Ladder tab | ✅ #15–18 | ❌ | 🔲 #32 (reuses parlay_math.py) | 🔲 Planned |
+| Prop selection toggles | ✅ | ❌ | 🔲 #31 | 🔲 Planned |
+| Ladder correlation filter | ✅ | ❌ | 🔲 #32 (inherits NFL engine) | 🔲 Planned |
+| Prediction History | ✅ | ✅ | 🔲 #28 (inherits module) | ✅ Done NFL/NHL |
+| Bet tracker / P&L log | ✅ | ✅ | 🔲 #28 (inherits module) | ✅ Done NFL/NHL |
+| Betting strategy selector (4 modes) | ✅ | ✅ | 🔲 #28 | ✅ Standard |
+| Risk tolerance slider | ✅ | ✅ | 🔲 #28 | ✅ Standard |
+| "Lock" badge >75% confidence | ✅ | ✅ | 🔲 #28 | ✅ Standard |
+| Standardized Kelly cap (10%) | ✅ | ✅ | 🔲 #28 | ✅ Standard |
+| Standardized bet signal colors | ✅ | ✅ | 🔲 #28 | ✅ Standard |
+| Stanley Cup Predictor tab | ❌ | ❌ | N/A | 🔲 §3.2.2 |
+| NHL Vegas odds integration | ✅ | ❌ | N/A | ⚠️ Phase 3 #10 |
+| NHL player props | ✅ | ❌ | N/A | ⚠️ Phase 4 #13 |
+| Daily bet summary (sidebar) | ❌ | ❌ | ❌ | 🔲 §3.1.4 |
+| Push notifications | ❌ | ❌ | ❌ | 🔲 Future |
 
 ---
 
