@@ -33,7 +33,7 @@ After completing **any build item** — no matter how small — you MUST update 
 This rule applies to ALL build items in the roadmap, including low-effort fixes. Do not batch updates — mark done immediately after each item is finished.
 
 ## Project Overview
-EdgeIQ is a multi-sport ML prediction platform (NFL + NHL). Entry point is `app.py`, deployed on Streamlit Community Cloud. See `EdgeIQ.md` for the full product definition.
+EdgeIQ is a multi-sport ML prediction platform (NFL + NHL + MLB in progress). Entry point is `app.py`, deployed on Streamlit Community Cloud. See `EdgeIQ.md` for the full product definition.
 
 ## Document Map
 | File | Purpose |
@@ -54,6 +54,7 @@ EdgeIQ is a multi-sport ML prediction platform (NFL + NHL). Entry point is `app.
 - **scipy** — spread_to_prob conversion
 - **pytz** — ET timezone handling for NHL schedule dates
 - **nfl-data-py** — historical NFL play-by-play and seasonal stats
+- **pybaseball** — MLB FanGraphs/Statcast data (team stats, pitcher ratings)
 - **python-dotenv** — local API key loading from `.env`
 - **beautifulsoup4 / lxml** — Pro Football Reference scraping
 
@@ -100,6 +101,7 @@ nhl_app.py                  # NHL section — render_nhl_app() — 2 tabs
 apis/
   cache.py                  # Shared JSON file cache with TTL (all APIs use this)
   espn.py                   # ESPN injuries + scoreboard (no key needed)
+  mlb.py                    # MLBClient — statsapi.mlb.com/api/v1/ (no key needed)
   nhl.py                    # NHLClient — api-web.nhle.com/v1/ (no key needed)
   odds.py                   # Vegas lines — ODDS_API_KEY
   pfr.py                    # Pro Football Reference scraper
@@ -122,6 +124,11 @@ build_nhl_team_stats.py     # NHL team ELO + stats
 build_nhl_goalie_ratings.py # Goalie quality ratings
 build_nhl_model.py          # Train NHL stacking ensemble
 
+# MLB model training scripts (Phase 6)
+build_mlb_games.py          # Fetch MLB games 2000–2025 via MLB Stats API, ELO → mlb_games_processed.csv
+build_mlb_team_stats.py     # MLB team wOBA/ERA-/FIP-/wRC+ via pybaseball FanGraphs
+build_mlb_pitcher_ratings.py # SP quality z-scores (ERA-/FIP-/K-BB/WHIP) — specialty rating
+
 # NFL support modules
 feature_engineering.py      # 26-feature computation (ELO, EPA, form, QB, matchup)
 data_pipeline.py            # Orchestrates all 5 APIs for live game context
@@ -132,6 +139,10 @@ defensive_matchup.py        # 6-position defensive matchup → ±4% win prob adj
 nhl_feature_engineering.py  # NHL feature computation
 nhl_game_week.py            # NHL weekly schedule + roster depth charts
 
+# MLB support modules (Phase 6 — in progress)
+mlb_feature_engineering.py  # MLB 28-feature matrix (TODO: item 23)
+mlb_game_week.py            # MLB weekly schedule + rotation helpers (TODO: item 27)
+
 # Trained models (pickle files — do not delete)
 model.pkl                   # Original NFL GBC (9 features, ~65.6% acc)
 model_enhanced.pkl          # NFL stacking ensemble (26 features, 69.3% acc)
@@ -140,6 +151,7 @@ model_nhl_enhanced.pkl      # NHL stacking ensemble (58.0% acc)
 model_nhl_total.pkl         # NHL O/U model
 elo_ratings.pkl             # NFL ELO ratings dict (all 32 teams)
 nhl_elo_ratings.pkl         # NHL ELO ratings dict (all teams)
+mlb_elo_ratings.pkl         # MLB ELO ratings dict (K=12, 33 team codes for historical continuity)
 player_lookup.pkl           # NFL player ID → name/position lookup
 
 # Data files (CSV)
@@ -155,6 +167,11 @@ nhl_goalie_ratings.csv      # Historical per-(goalie, season) ratings
 nhl_goalie_team_ratings.csv # Current season goalie per team
 nhl_team_stats_current.csv  # NHL current season team stats
 nhl_team_stats_historical.csv # NHL historical team stats
+mlb_games_processed.csv     # MLB game data 2000–2025 (60,870 rows, ELO + rolling form)
+mlb_pitcher_ratings.csv     # Historical per-(pitcher, season) SP quality z-scores (4,574 rows)
+mlb_pitcher_team_ratings.csv # Current season SP score per team
+mlb_team_stats_current.csv  # MLB 2025 wOBA/ERA-/FIP-/wRC+ team stats
+mlb_team_stats_historical.csv # MLB per-team stats 2000–2025
 def_pass_stats.csv          # NFL defensive pass EPA per team/season
 def_rush_stats.csv          # NFL defensive rush EPA per team/season
 passing_stats.csv           # NFL player passing stats
