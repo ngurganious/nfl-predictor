@@ -615,23 +615,103 @@ def _render_sp_panel(team: str, sp_info: dict, pitcher_ratings: pd.DataFrame):
 
 # ── Weekly schedule section ───────────────────────────────────────────────────
 
+def _sample_mlb_week_schedule() -> dict:
+    return {
+        'Thursday, Apr 3': [
+            {'game_id': 'mlb_s_thu_1', 'home_team': 'NYY', 'away_team': 'MIL',
+             'game_date_label': 'Apr 3', 'game_time_et': '1:05 PM ET',
+             'venue': 'Yankee Stadium', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_thu_2', 'home_team': 'LAD', 'away_team': 'CHC',
+             'game_date_label': 'Apr 3', 'game_time_et': '4:10 PM ET',
+             'venue': 'Dodger Stadium', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_thu_3', 'home_team': 'HOU', 'away_team': 'NYM',
+             'game_date_label': 'Apr 3', 'game_time_et': '7:10 PM ET',
+             'venue': 'Minute Maid Park', 'status': 'scheduled', 'day_night': 'night'},
+        ],
+        'Friday, Apr 4': [
+            {'game_id': 'mlb_s_fri_1', 'home_team': 'BOS', 'away_team': 'TOR',
+             'game_date_label': 'Apr 4', 'game_time_et': '7:10 PM ET',
+             'venue': 'Fenway Park', 'status': 'scheduled', 'day_night': 'night'},
+            {'game_id': 'mlb_s_fri_2', 'home_team': 'ATL', 'away_team': 'PHI',
+             'game_date_label': 'Apr 4', 'game_time_et': '7:20 PM ET',
+             'venue': 'Truist Park', 'status': 'scheduled', 'day_night': 'night'},
+            {'game_id': 'mlb_s_fri_3', 'home_team': 'SD',  'away_team': 'SF',
+             'game_date_label': 'Apr 4', 'game_time_et': '9:40 PM ET',
+             'venue': 'Petco Park', 'status': 'scheduled', 'day_night': 'night'},
+        ],
+        'Saturday, Apr 5': [
+            {'game_id': 'mlb_s_sat_1', 'home_team': 'CLE', 'away_team': 'DET',
+             'game_date_label': 'Apr 5', 'game_time_et': '1:10 PM ET',
+             'venue': 'Progressive Field', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_sat_2', 'home_team': 'STL', 'away_team': 'CIN',
+             'game_date_label': 'Apr 5', 'game_time_et': '3:15 PM ET',
+             'venue': 'Busch Stadium', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_sat_3', 'home_team': 'SEA', 'away_team': 'TEX',
+             'game_date_label': 'Apr 5', 'game_time_et': '9:10 PM ET',
+             'venue': 'T-Mobile Park', 'status': 'scheduled', 'day_night': 'night'},
+        ],
+        'Sunday, Apr 6': [
+            {'game_id': 'mlb_s_sun_1', 'home_team': 'KC',  'away_team': 'MIN',
+             'game_date_label': 'Apr 6', 'game_time_et': '2:10 PM ET',
+             'venue': 'Kauffman Stadium', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_sun_2', 'home_team': 'MIA', 'away_team': 'WSH',
+             'game_date_label': 'Apr 6', 'game_time_et': '4:10 PM ET',
+             'venue': 'loanDepot park', 'status': 'scheduled', 'day_night': 'day'},
+            {'game_id': 'mlb_s_sun_3', 'home_team': 'OAK', 'away_team': 'AZ',
+             'game_date_label': 'Apr 6', 'game_time_et': '4:07 PM ET',
+             'venue': 'Oakland Coliseum', 'status': 'scheduled', 'day_night': 'day'},
+        ],
+    }
+
+
 def _render_weekly_games(model, features, elo_ratings, pitcher_ratings, team_stats,
                          total_model_pkg, mlb_games, full_pitcher_ratings, mlb_client):
     from mlb_game_week import fetch_mlb_weekly_schedule, get_mlb_sp_display_name
 
-    try:
-        schedule = fetch_mlb_weekly_schedule(mlb_client)
-    except Exception as e:
-        st.warning(f"Could not load schedule: {e}")
-        schedule = {}
+    btn_col, _, sample_col = st.columns([2, 4, 2])
+    with btn_col:
+        load_btn = st.button("Load / Refresh Schedule", type="secondary",
+                             use_container_width=True, key="mlb_load_sched_btn")
+    with sample_col:
+        sample_btn = st.button("Load Sample Week (Demo)", type="secondary",
+                               use_container_width=True, key="mlb_sample_btn")
+
+    if load_btn:
+        import re as _re
+        for _k in list(st.session_state.keys()):
+            if _k in ('mlb_precalc_done',) or _re.match(r'^mlb_g.+_pred$', _k):
+                del st.session_state[_k]
+        with st.spinner("Loading this week's MLB schedule..."):
+            _sched = {}
+            try:
+                _sched = fetch_mlb_weekly_schedule(mlb_client)
+            except Exception as _e:
+                st.warning(f"Could not fetch schedule: {_e}")
+            if not _sched:
+                _sched = _sample_mlb_week_schedule()
+                st.info("No live games found (off-season?). Showing sample week for demo.")
+        st.session_state['mlb_weekly_schedule'] = _sched
+
+    if sample_btn:
+        import re as _re
+        for _k in list(st.session_state.keys()):
+            if _k in ('mlb_precalc_done',) or _re.match(r'^mlb_g.+_pred$', _k):
+                del st.session_state[_k]
+        st.session_state['mlb_weekly_schedule'] = _sample_mlb_week_schedule()
+
+    schedule = st.session_state.get('mlb_weekly_schedule')
+
+    if schedule is None:
+        st.info("Click **Load / Refresh Schedule** to fetch this week's MLB games, "
+                "or **Load Sample Week** to explore the interface with demo data.")
+        return
 
     if not schedule:
-        st.info("No scheduled games found for this week. MLB regular season runs April – October.")
+        st.warning("No games found. Click **Load Sample Week** to see a demo.")
         return
 
     # Store for Props + Ladder tabs
-    if 'mlb_weekly_schedule' not in st.session_state:
-        st.session_state['mlb_weekly_schedule'] = schedule
+    st.session_state['mlb_weekly_schedule'] = schedule
 
     # Expand All / Collapse All
     ec1, ec2 = st.columns([1, 1])
