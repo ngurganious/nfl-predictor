@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-01 (Phase 6 items 20–22 complete — MLB data pipeline built)
+**Last updated:** 2026-03-02 (Phase 6 items 20–29 complete — MLB fully wired end-to-end)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -95,13 +95,13 @@
 | 20 | `build_mlb_games.py` — fetch MLB game results 2000–2025 via pybaseball, ELO engine (K=12, home=35 pts) → `mlb_games_processed.csv`, `mlb_elo_ratings.pkl` | High | ✅ | 2026-03-01 | `apis/mlb.py` MLBClient (MLB Stats API) · 60,870 games · 26 cols · 53.7% home win rate · NYY top ELO, COL lowest |
 | 21 | `build_mlb_team_stats.py` — team wOBA, ERA-, FIP-, wRC+ via pybaseball FanGraphs → `mlb_team_stats_current.csv`, `mlb_team_stats_historical.csv` | Medium | ✅ | 2026-03-01 | 780 rows (30 teams × 26 seasons) · 18 cols · 2025 current data available |
 | 22 | `build_mlb_pitcher_ratings.py` — SP quality z-score composite → `mlb_pitcher_ratings.csv`, `mlb_pitcher_team_ratings.csv` | Medium | ✅ | 2026-03-01 | 4,574 pitcher-seasons · ERA-/FIP-/K-BB/WHIP weighted formula · top: Skubal/Wheeler/Sale · bottom: COL starters |
-| 23 | `mlb_feature_engineering.py` — 28-feature matrix (ELO, run-line, wOBA, pitcher diff, form, matchup) | Medium | 🔲 | — | Mirrors `nhl_feature_engineering.py` |
-| 24 | `build_mlb_model.py` — stacking ensemble GBC + RF → LogReg → `model_mlb_enhanced.pkl` | Medium | 🔲 | — | Same architecture as NFL/NHL; target 64–67% accuracy |
-| 25 | `build_mlb_total_model.py` — O/U Ridge regression model → `model_mlb_total.pkl` | Low | 🔲 | — | Same Ridge pattern as NFL/NHL |
-| 26 | `apis/mlb.py` — MLB Stats API client (live schedule, confirmed starters, lineup cards) | Medium | 🔲 | — | Direct requests to `statsapi.mlb.com` — no auth required |
-| 27 | `mlb_game_week.py` — weekly schedule + confirmed SP / batting order helpers | Medium | 🔲 | — | Mirrors `nhl_game_week.py` |
-| 28 | `mlb_app.py` — `render_mlb_app()`: Game Predictor + Backtesting tabs | High | 🔲 | — | Mirrors `nhl_app.py`; full EdgeIQ standards (Kelly, tiers, colors, prediction history) |
-| 29 | Wire `app.py` — add MLB sport card on home page + `sport == 'mlb'` routing | Low | 🔲 | — | Add MLB card alongside NFL/NHL cards |
+| 23 | `mlb_feature_engineering.py` — 28-feature matrix (ELO, run-line, wOBA, pitcher diff, form, matchup) | Medium | ✅ | 2026-03-02 | 29 features · team stats + pitcher joined via `_stats_key()` abbrev bridge · 0 NaN across 60,870 games |
+| 24 | `build_mlb_model.py` — stacking ensemble GBC + RF → LogReg → `model_mlb_enhanced.pkl` | Medium | ✅ | 2026-03-02 | 58.0% accuracy (2024–25 holdout) · top features: ERA-, wRC+, ELO diff |
+| 25 | `build_mlb_total_model.py` — O/U Ridge regression model → `model_mlb_total.pkl` | Low | ✅ | 2026-03-02 | 61.4% O/U accuracy · MAE 3.44 runs · top feature: home wOBA |
+| 26 | `apis/mlb.py` — MLB Stats API client (live schedule, confirmed starters, lineup cards) | Medium | ✅ | 2026-03-01 | Already complete in item 20 — `get_current_week_schedule()`, `get_probable_pitchers()`, `get_team_roster()` |
+| 27 | `mlb_game_week.py` — weekly schedule + confirmed SP / batting order helpers | Medium | ✅ | 2026-03-02 | `fetch_mlb_weekly_schedule()`, `get_mlb_team_roster_by_position()`, SP helpers · returns {} correctly off-season |
+| 28 | `mlb_app.py` — `render_mlb_app()`: Game Predictor + Backtesting tabs | High | ✅ | 2026-03-02 | 3 tabs: Game Predictor (weekly schedule + manual), Backtesting, Track Record · SP panel + full Kelly sizing |
+| 29 | Wire `app.py` — add MLB sport card on home page + `sport == 'mlb'` routing | Low | ✅ | 2026-03-02 | `app.py` home page 3-column layout · MLB card added · `elif sport == 'mlb'` router wired |
 | 30 | `build_mlb_player_model.py` — 4 GBR prop models: pitcher K's, earned runs, batter hits, total bases | High | 🔲 | — | Analogous to `build_player_model.py` (NFL) |
 | 31 | MLB: Player Props tab — game cards, prop predictions, selection toggles, Build Ladder button | Medium | 🔲 | — | Mirrors NFL Props tab UI (already built in Phase 5) |
 | 32 | MLB: Parlay Ladder — wire MLB prop legs into `parlay_math.py` (reuse existing engine) | Low | 🔲 | — | `parlay_math.py` already built in Phase 5 — minimal wiring only |

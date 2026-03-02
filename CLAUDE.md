@@ -5,8 +5,7 @@
 > For what to build next, see `PRD.md`.
 > For current build progress, see `ROADMAP.md`.
 
-## Workflow Requirements
-- update CLAUDE.md before every git commit
+## Workflow Requirements- update CLAUDE.md before every git commit
 - always ask claritying questions in planning mode
 - For any architectural decision or model change, use extended thinking before proposing a solution
 
@@ -33,7 +32,7 @@ After completing **any build item** — no matter how small — you MUST update 
 This rule applies to ALL build items in the roadmap, including low-effort fixes. Do not batch updates — mark done immediately after each item is finished.
 
 ## Project Overview
-EdgeIQ is a multi-sport ML prediction platform (NFL + NHL + MLB in progress). Entry point is `app.py`, deployed on Streamlit Community Cloud. See `EdgeIQ.md` for the full product definition.
+EdgeIQ is a multi-sport ML prediction platform (NFL + NHL + MLB). Entry point is `app.py`, deployed on Streamlit Community Cloud. See `EdgeIQ.md` for the full product definition.
 
 ## Document Map
 | File | Purpose |
@@ -96,7 +95,8 @@ python -c "from apis.cache import clear; clear()"
 ```
 app.py                      # Entry point — multi-sport home page router
 final_app.py                # NFL section — render_nfl_app() — 5 tabs
-nhl_app.py                  # NHL section — render_nhl_app() — 2 tabs
+nhl_app.py                  # NHL section — render_nhl_app() — 3 tabs
+mlb_app.py                  # MLB section — render_mlb_app() — 3 tabs (Game Predictor, Backtesting, Track Record)
 
 apis/
   cache.py                  # Shared JSON file cache with TTL (all APIs use this)
@@ -128,6 +128,8 @@ build_nhl_model.py          # Train NHL stacking ensemble
 build_mlb_games.py          # Fetch MLB games 2000–2025 via MLB Stats API, ELO → mlb_games_processed.csv
 build_mlb_team_stats.py     # MLB team wOBA/ERA-/FIP-/wRC+ via pybaseball FanGraphs
 build_mlb_pitcher_ratings.py # SP quality z-scores (ERA-/FIP-/K-BB/WHIP) — specialty rating
+build_mlb_model.py          # Train MLB stacking ensemble → model_mlb_enhanced.pkl (58.0% acc)
+build_mlb_total_model.py    # Train MLB O/U Ridge model → model_mlb_total.pkl (61.4% O/U acc)
 
 # NFL support modules
 feature_engineering.py      # 26-feature computation (ELO, EPA, form, QB, matchup)
@@ -139,9 +141,9 @@ defensive_matchup.py        # 6-position defensive matchup → ±4% win prob adj
 nhl_feature_engineering.py  # NHL feature computation
 nhl_game_week.py            # NHL weekly schedule + roster depth charts
 
-# MLB support modules (Phase 6 — in progress)
-mlb_feature_engineering.py  # MLB 28-feature matrix (TODO: item 23)
-mlb_game_week.py            # MLB weekly schedule + rotation helpers (TODO: item 27)
+# MLB support modules (Phase 6)
+mlb_feature_engineering.py  # MLB 29-feature matrix · _stats_key() abbrev bridge for FanGraphs join
+mlb_game_week.py            # MLB weekly schedule + SP / roster helpers
 
 # Trained models (pickle files — do not delete)
 model.pkl                   # Original NFL GBC (9 features, ~65.6% acc)

@@ -102,7 +102,7 @@ def _render_home():
 
     st.divider()
 
-    nfl_col, nhl_col = st.columns(2, gap="large")
+    nfl_col, nhl_col, mlb_col = st.columns(3, gap="large")
 
     with nfl_col:
         with st.container(border=True):
@@ -142,6 +142,26 @@ def _render_home():
             if st.button("Launch NHL Terminal", type="primary",
                          use_container_width=True, key="go_nhl"):
                 st.session_state['sport'] = 'nhl'
+                st.rerun()
+
+    with mlb_col:
+        with st.container(border=True):
+            st.markdown("### ⚾ MLB Baseball")
+            st.markdown("""
+            <div style="margin-bottom: 20px;">
+                <span class="signal-badge signal-lean">58.0% Accuracy</span>
+                <span class="signal-badge signal-pass">29 Features</span>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+            *   **Game Predictor:** ERA-, wOBA, SP quality adjustments.
+            *   **Run Total:** O/U model trained on 60K+ games.
+            *   **Strategy:** Kelly Criterion bet sizing & backtesting.
+            """)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Launch MLB Terminal", type="primary",
+                         use_container_width=True, key="go_mlb"):
+                st.session_state['sport'] = 'mlb'
                 st.rerun()
 
     st.divider()
@@ -184,5 +204,15 @@ elif sport == 'nhl':
         st.error(f"NHL section not yet available: {e}")
         st.info("The NHL model is still being trained. Check back soon!")
         if st.button("Return to Home", key="nhl_err_home"):
+            st.session_state['sport'] = None
+            st.rerun()
+
+elif sport == 'mlb':
+    try:
+        from mlb_app import render_mlb_app
+        render_mlb_app()
+    except Exception as e:
+        st.error(f"Failed to load MLB section: {e}")
+        if st.button("Return to Home", key="mlb_err_home"):
             st.session_state['sport'] = None
             st.rerun()
