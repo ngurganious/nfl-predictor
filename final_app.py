@@ -918,9 +918,9 @@ def render_nfl_app():
         confidence = max(fph, fpaw)
         if confidence > 0.75:
             label, _css_class = "LOCK", "signal-lock"
-        elif confidence > 0.70:
+        elif confidence > 0.65:
             label, _css_class = "HIGH CONFIDENCE", "signal-strong"
-        elif confidence > 0.60:
+        elif confidence > 0.58:
             label, _css_class = "MODERATE", "signal-lean"
         else:
             label, _css_class = "TOSS-UP", "signal-pass"
@@ -1651,9 +1651,9 @@ def render_nfl_app():
             confidence = max(final_prob_home, final_prob_away)
             if confidence > 0.75:
                 label, _css_class = "LOCK", "signal-lock"
-            elif confidence > 0.70:
+            elif confidence > 0.65:
                 label, _css_class = "HIGH CONFIDENCE", "signal-strong"
-            elif confidence > 0.60:
+            elif confidence > 0.58:
                 label, _css_class = "MODERATE", "signal-lean"
             else:
                 label, _css_class = "TOSS-UP", "signal-pass"
@@ -2584,7 +2584,7 @@ def render_nfl_app():
             _tiers = _pm.optimize_tiers(_legs, _ladder_budget)
             _tier_results = _pm.compute_stakes(_tiers, _ladder_budget)
 
-            # ── Summary metrics (Gemini layout pattern) ──────────────
+            # ── Summary metrics ───────────────────────────────────────
             _n_games = len(set(v.get('game_label', '') for v in _rpl_sels.values()))
             _max_payout = sum(t.get('payout', 0) for t in _tier_results)
             _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
@@ -2610,7 +2610,7 @@ def render_nfl_app():
             st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
             st.divider()
 
-            # ── Tier sections (Gemini layout pattern — wired to real data) ──
+            # ── Tier sections ─────────────────────────────────────────────
             _TIER_EMOJI = ['\U0001f3e6', '\U0001f4c8', '\U0001f680', '\U0001f319']
             for i, tier in enumerate(_tier_results):
                 with st.container(border=True):

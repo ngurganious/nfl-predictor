@@ -80,7 +80,7 @@
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
 | 15 | NFL: Prop selection toggles + "🪜 Build Ladder" button on Player Props tab | Medium | ✅ | 2026-03-01 | `final_app.py` Props tab redesigned as game cards · checkboxes per prop/ML/OU · selection counter · cross-game toggle · `apis/odds.py` extended with `get_nfl_events()` + `get_player_props()` |
-| 16 | NFL: Parlay Ladder tab — 4-tier ladder (Banker/Accelerator×2/Moonshot), odds calc, break-even stake sizing | Medium | ✅ | 2026-03-01 | `parlay_math.py` new module · `optimize_tiers()` dynamic sizing · `compute_stakes()` break-even · Gemini mock replaced with real engine · `final_app.py` tab wired |
+| 16 | NFL: Parlay Ladder tab — 4-tier ladder (Banker/Accelerator×2/Moonshot), odds calc, break-even stake sizing | Medium | ✅ | 2026-03-01 | `parlay_math.py` new module · `optimize_tiers()` dynamic sizing · `compute_stakes()` break-even · `final_app.py` tab wired |
 | 17 | NFL: Correlation filter — same-game conflict detection for ladder legs | Medium | ✅ | 2026-03-01 | `parlay_math.py` `check_correlations()` · double-under + opposing-QB + general same-game flags · displayed in Ladder tab |
 | 18 | NFL: Backtested ladder ROI from historical prop data | Medium | ✅ | 2026-03-01 | `parlay_math.py` added `simulate_ladder_week()` · `final_app.py` added `simulate_ladder_backtest()` cached function + expander UI in Ladder tab · 156 weeks simulated (2016-2024) · Banker 94%, Accel 75%, Moonshot 53% hit rates |
 | 19 | NHL: Parlay Ladder tab (mirrors NFL) | Medium | 🔲 | — | Blocked by NHL Player Props (item 13) · PRD §3.6.8 |

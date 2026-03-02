@@ -9,18 +9,8 @@
 - always ask claritying questions in planning mode
 - For any architectural decision or model change, use extended thinking before proposing a solution
 
-## Dual-Assistant Workflow
-You are the **Backend & Data Engineer**. Your counterpart is Gemini (**Frontend & Design Lead**).
-
-| Role | Assistant | Responsibilities |
-|------|-----------|------------------|
-| **UI/UX** | **Gemini** | Layouts, CSS styling, marketing copy, and **mock data** prototypes. |
-| **Backend** | **Claude** | API integration, complex math, model training, and **wiring real data** into Gemini's shells. |
-
-**Protocol:**
-1. If Gemini has built a UI with `MOCK_DATA`, your job is to replace it with real function calls.
-2. **Do not refactor** Gemini's UI layout or CSS unless it breaks functionality.
-3. Focus on `apis/`, `models/`, and data pipelines.
+## Role
+You are the **sole engineer** on this project — responsible for all backend logic, data pipelines, model training, UI/UX design, CSS, and Streamlit layout. There is no other AI assistant involved.
 
 ## Roadmap Rule (Required)
 After completing **any build item** — no matter how small — you MUST update `ROADMAP.md`:
@@ -96,7 +86,7 @@ python -c "from apis.cache import clear; clear()"
 app.py                      # Entry point — multi-sport home page router
 final_app.py                # NFL section — render_nfl_app() — 5 tabs
 nhl_app.py                  # NHL section — render_nhl_app() — 3 tabs
-mlb_app.py                  # MLB section — render_mlb_app() — 3 tabs (Game Predictor, Backtesting, Track Record)
+mlb_app.py                  # MLB section — render_mlb_app() — 5 tabs (Game Predictor, Backtesting, Player Props, Parlay Ladder, Track Record)
 
 apis/
   cache.py                  # Shared JSON file cache with TTL (all APIs use this)

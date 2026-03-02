@@ -40,7 +40,7 @@
 |-------|--------|---------------|------|
 | **NFL** | ✅ Full | 69.3% (26-feature stacking ensemble) | Game Predictor, Player Props, Head-to-Head, Super Bowl Predictor, Backtesting |
 | **NHL** | ✅ Core | 58.0% (29-feature stacking ensemble) | Game Predictor, Backtesting |
-| **MLB** | 🚧 In Progress | — (target: 64–67%) | Game Predictor, Player Props, Backtesting, Parlay Ladder (Phase 6) |
+| **MLB** | ✅ Full | 58.0% (29-feature stacking ensemble) | Game Predictor, Player Props, Backtesting, Parlay Ladder, Track Record |
 | NBA | 🔲 Planned | — | — |
 
 ---
@@ -314,27 +314,11 @@ Every sport with a "star player" impact surface must implement a seasonal qualit
 
 ---
 
-## 11. Dual-Assistant Workflow
+## 11. Document Map
 
-EdgeIQ is built using a parallel "Frontend-First" workflow:
-
-| Role | Assistant | Responsibilities |
-|------|-----------|------------------|
-| **UI/UX & Design** | **Gemini** | Layout, visual styling, component prototyping, marketing copy, and **mock data generation**. Builds the "shell" of the application. |
-| **Backend & Logic** | **Claude** | API integration, model training, complex calculations (Kelly/Parlay math), data persistence, and wiring real data into Gemini's shells. |
-
-**The Handoff Protocol:**
-1. **Gemini** designs the screen using hardcoded `mock_data` dictionaries.
-2. User approves the look, feel, and interaction flow.
-3. **Claude** replaces `mock_data` with actual function calls to `apis/` or `model.pkl`.
-
----
-
-## 12. Document Map
-
-| File | Purpose | Audience |
-|------|---------|---------|
-| `EdgeIQ.md` | **This file** — product definition, brand, standards | Product / design |
-| `CLAUDE.md` | Developer instructions for Claude Code | Claude AI assistant |
-| `GEMINI.md` | Developer instructions for Gemini Code Assist | Gemini AI assistant |
-| `PRD.md` | Living requirements — what to build next, gap analysis | Planning / build sessions |
+| File | Purpose |
+|------|---------|
+| `EdgeIQ.md` | **This file** — product definition, brand, standards |
+| `CLAUDE.md` | Developer instructions for Claude Code |
+| `PRD.md` | Living requirements — what to build next, gap analysis |
+| `ROADMAP.md` | Active build tracker — update after every completed item |
