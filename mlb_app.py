@@ -150,6 +150,36 @@ def load_mlb_team_stats():
 
 
 @st.cache_data
+def load_mlb_player_models():
+    """Load 4 GBR prop models from model_mlb_player.pkl."""
+    try:
+        with open("model_mlb_player.pkl", "rb") as f:
+            return pickle.load(f)
+    except Exception:
+        return {}
+
+
+@st.cache_data
+def load_mlb_pitcher_season_stats():
+    """Pitcher season stats with k_per_9 + ip_per_gs for SP prop predictions."""
+    try:
+        df = pd.read_csv("mlb_pitcher_season_stats.csv")
+        max_season = df['season'].max()
+        return df[df['season'] == max_season].copy()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data
+def load_mlb_batter_stats():
+    """Current-season qualified batter stats (AVG, ISO, SLG, wOBA, etc.)."""
+    try:
+        return pd.read_csv("mlb_batter_stats_current.csv")
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data
 def load_mlb_historical_features():
     from mlb_feature_engineering import build_mlb_enhanced_features, MLB_ENHANCED_FEATURES
     games = load_mlb_games()
@@ -599,6 +629,10 @@ def _render_weekly_games(model, features, elo_ratings, pitcher_ratings, team_sta
         st.info("No scheduled games found for this week. MLB regular season runs April – October.")
         return
 
+    # Store for Props + Ladder tabs
+    if 'mlb_weekly_schedule' not in st.session_state:
+        st.session_state['mlb_weekly_schedule'] = schedule
+
     # Expand All / Collapse All
     ec1, ec2 = st.columns([1, 1])
     with ec1:
@@ -1007,6 +1041,459 @@ def _render_tab3():
             st.warning(f"Export error: {e}")
 
 
+# ── Prop helpers ──────────────────────────────────────────────────────────────
+
+def _mlb_prop_confidence(prediction: float, vegas_line, mae: float):
+    """Return (confidence, direction, edge_pct) for a prop prediction vs. Vegas line."""
+    if vegas_line is None or vegas_line == 0:
+        return 0.5, 'OVER', 0.0
+    diff = prediction - float(vegas_line)
+    z = abs(diff) / max(mae, 0.01)
+    conf = min(0.50 + z * 0.08, 0.92)
+    direction = 'OVER' if diff > 0 else 'UNDER'
+    edge = diff / float(vegas_line) * 100
+    return round(conf, 3), direction, round(edge, 2)
+
+
+def _sp_prop_features(sp_name: str, opp_team_abbr: str, is_home: int,
+                       pitcher_season: pd.DataFrame, team_stats: pd.DataFrame) -> dict:
+    """Build feature dict for SP K / ER models. Returns defaults on miss."""
+    # Pitcher features
+    k9, ipgs, era_m, fip_m = 7.5, 5.5, 100.0, 100.0
+    if pitcher_season is not None and not pitcher_season.empty and sp_name:
+        sp_name_lower = sp_name.lower()
+        match = pitcher_season[pitcher_season['Name'].str.lower() == sp_name_lower]
+        if len(match) > 0:
+            row = match.iloc[0]
+            k9   = float(row['k_per_9'])   if not pd.isna(row.get('k_per_9',   np.nan)) else 7.5
+            ipgs = float(row['ip_per_gs']) if not pd.isna(row.get('ip_per_gs', np.nan)) else 5.5
+        # Fall back to pitcher_ratings for era_minus / fip_minus
+    if team_stats is not None and not team_stats.empty:
+        fg_key = _stats_key(opp_team_abbr)
+        era_m = float(team_stats.loc[fg_key, 'era_minus']) if fg_key in team_stats.index and 'era_minus' in team_stats.columns else 100.0
+        fip_m = float(team_stats.loc[fg_key, 'fip_minus']) if fg_key in team_stats.index and 'fip_minus' in team_stats.columns else 100.0
+    opp_k = 0.225
+    opp_wo = 0.320
+    opp_wc = 100.0
+    if team_stats is not None and not team_stats.empty:
+        fg_key = _stats_key(opp_team_abbr)
+        if fg_key in team_stats.index:
+            opp_k  = float(team_stats.loc[fg_key, 'k_pct'])   if 'k_pct'    in team_stats.columns else 0.225
+            opp_wo = float(team_stats.loc[fg_key, 'woba'])     if 'woba'     in team_stats.columns else 0.320
+            opp_wc = float(team_stats.loc[fg_key, 'wrc_plus']) if 'wrc_plus' in team_stats.columns else 100.0
+    return {
+        'pitcher_k':  {'k_per_9': k9, 'ip_per_gs': ipgs, 'fip_minus': fip_m, 'opp_k_pct': opp_k, 'is_home': is_home},
+        'pitcher_er': {'era_minus': era_m, 'fip_minus': fip_m, 'ip_per_gs': ipgs, 'opp_woba': opp_wo, 'opp_wrc_plus': opp_wc, 'is_home': is_home},
+        'sp_name': sp_name or 'TBD', 'k_per_9': k9, 'ip_per_gs': ipgs,
+    }
+
+
+def _batter_prop_features(batter_name: str, opp_team_abbr: str, is_home: int,
+                           batter_stats: pd.DataFrame, team_stats: pd.DataFrame) -> dict:
+    """Build feature dict for batter hits / TB models. Returns None on complete miss."""
+    if batter_stats is None or batter_stats.empty:
+        return None
+    bname_lower = batter_name.lower()
+    match = batter_stats[batter_stats['Name'].str.lower() == bname_lower]
+    if len(match) == 0:
+        return None
+    row = match.iloc[0]
+    avg  = float(row.get('AVG',  0.250)) if not pd.isna(row.get('AVG',  np.nan)) else 0.250
+    obp  = float(row.get('OBP',  0.320)) if not pd.isna(row.get('OBP',  np.nan)) else 0.320
+    slg  = float(row.get('SLG',  0.400)) if not pd.isna(row.get('SLG',  np.nan)) else 0.400
+    iso  = float(row.get('ISO',  0.150)) if not pd.isna(row.get('ISO',  np.nan)) else 0.150
+    woba = float(row.get('wOBA', 0.320)) if not pd.isna(row.get('wOBA', np.nan)) else 0.320
+    wrc  = float(row.get('wRC+', 100.0)) if not pd.isna(row.get('wRC+', np.nan)) else 100.0
+    ab_g = float(row.get('ab_per_game', 3.8)) if not pd.isna(row.get('ab_per_game', np.nan)) else 3.8
+
+    opp_era_m = 100.0
+    opp_fip_m = 100.0
+    opp_whip  = 1.30
+    if team_stats is not None and not team_stats.empty:
+        fg_key = _stats_key(opp_team_abbr)
+        if fg_key in team_stats.index:
+            opp_era_m = float(team_stats.loc[fg_key, 'era_minus']) if 'era_minus' in team_stats.columns else 100.0
+            opp_fip_m = float(team_stats.loc[fg_key, 'fip_minus']) if 'fip_minus' in team_stats.columns else 100.0
+            opp_whip  = float(team_stats.loc[fg_key, 'whip'])      if 'whip'      in team_stats.columns else 1.30
+
+    return {
+        'batter_hits': {'batter_avg': avg, 'batter_obp': obp, 'ab_per_game': ab_g,
+                        'is_home': is_home, 'opp_era_minus': opp_era_m,
+                        'opp_fip_minus': opp_fip_m, 'opp_whip': opp_whip},
+        'batter_tb':   {'batter_iso': iso, 'batter_slg': slg, 'batter_woba': woba,
+                        'ab_per_game': ab_g, 'is_home': is_home,
+                        'opp_era_minus': opp_era_m, 'opp_fip_minus': opp_fip_m},
+        'name': batter_name, 'avg': avg, 'iso': iso, 'wrc_plus': wrc,
+    }
+
+
+def _mlb_rpl_add(leg: dict):
+    if 'mlb_rpl_selections' not in st.session_state:
+        st.session_state['mlb_rpl_selections'] = {}
+    st.session_state['mlb_rpl_selections'][leg['leg_id']] = leg
+
+
+def _mlb_rpl_remove(leg_id: str):
+    sels = st.session_state.get('mlb_rpl_selections', {})
+    sels.pop(leg_id, None)
+    st.session_state['mlb_rpl_selections'] = sels
+
+
+# ── Player Props tab (item 31) ─────────────────────────────────────────────────
+
+def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
+                      batter_stats: pd.DataFrame, team_stats: pd.DataFrame):
+    st.header("🏃 MLB Player Props + Parlay Builder")
+
+    if not player_models:
+        st.warning("Player prop models not found. Run `python build_mlb_player_model.py` first.")
+        return
+
+    pk_pkg  = player_models.get('pitcher_k',   {})
+    per_pkg = player_models.get('pitcher_er',  {})
+    bh_pkg  = player_models.get('batter_hits', {})
+    bt_pkg  = player_models.get('batter_tb',   {})
+
+    pk_model  = pk_pkg.get('model')
+    per_model = per_pkg.get('model')
+    bh_model  = bh_pkg.get('model')
+    bt_model  = bt_pkg.get('model')
+
+    pk_feat  = pk_pkg.get('features',  [])
+    per_feat = per_pkg.get('features', [])
+    bh_feat  = bh_pkg.get('features',  [])
+    bt_feat  = bt_pkg.get('features',  [])
+
+    mae_pk  = pk_pkg.get('mae',  2.0)
+    mae_per = per_pkg.get('mae', 1.5)
+    mae_bh  = bh_pkg.get('mae', 0.45)
+    mae_bt  = bt_pkg.get('mae', 0.70)
+
+    # Selection counter + Ladder CTA
+    _sels = st.session_state.get('mlb_rpl_selections', {})
+    _sel_ct = len(_sels)
+    sc1, sc2 = st.columns([6, 2])
+    with sc1:
+        if _sel_ct > 0:
+            _n_g = len(set(v.get('game_label', '') for v in _sels.values()))
+            st.info(f"🪜 **{_sel_ct} legs selected** from {_n_g} games")
+        else:
+            st.caption("Select legs from game cards below to build a parlay ladder")
+    with sc2:
+        if _sel_ct >= 3:
+            st.success("Switch to **Parlay Ladder** tab!")
+
+    st.divider()
+
+    schedule = st.session_state.get('mlb_weekly_schedule')
+    if not schedule:
+        st.info("Load the weekly schedule from the **Game Predictor** tab first.")
+        return
+
+    # Pre-calculate props for all games
+    if 'mlb_props_precalc_done' not in st.session_state:
+        with st.spinner("Pre-calculating player props for all games..."):
+            _g_idx = 0
+            for _day, _day_games in schedule.items():
+                for _gi in _day_games:
+                    _home = _gi.get('home_team', '')
+                    _away = _gi.get('away_team', '')
+                    _home_sp = (_gi.get('home_sp') or {}).get('name', '')
+                    _away_sp = (_gi.get('away_sp') or {}).get('name', '')
+
+                    _props = []
+
+                    # SP props for each side
+                    for _sp_name, _sp_team, _opp_team, _is_home in [
+                        (_home_sp, _home, _away, 1),
+                        (_away_sp, _away, _home, 0),
+                    ]:
+                        if not _sp_name or _sp_name == 'TBD':
+                            continue
+                        _sp_f = _sp_prop_features(_sp_name, _opp_team, _is_home,
+                                                  pitcher_season, team_stats)
+                        if pk_model and pk_feat:
+                            _feat_k = pd.DataFrame([{f: _sp_f['pitcher_k'].get(f, 0) for f in pk_feat}])
+                            _pred_k = float(pk_model.predict(_feat_k)[0])
+                            _props.append({
+                                'player': _sp_name, 'team': _sp_team, 'opp': _opp_team,
+                                'prop_type': 'Pitcher K', 'market': 'pitcher_strikeouts',
+                                'prediction': round(_pred_k, 1), 'mae': mae_pk,
+                                'vegas_line': None, 'odds': -110,
+                                'confidence': 0.55, 'direction': 'OVER', 'edge': 0.0,
+                                'is_sp': True,
+                            })
+                        if per_model and per_feat:
+                            _feat_er = pd.DataFrame([{f: _sp_f['pitcher_er'].get(f, 0) for f in per_feat}])
+                            _pred_er = float(per_model.predict(_feat_er)[0])
+                            _props.append({
+                                'player': _sp_name, 'team': _sp_team, 'opp': _opp_team,
+                                'prop_type': 'Pitcher ER', 'market': 'pitcher_earned_runs',
+                                'prediction': round(_pred_er, 1), 'mae': mae_per,
+                                'vegas_line': None, 'odds': -110,
+                                'confidence': 0.52, 'direction': 'UNDER', 'edge': 0.0,
+                                'is_sp': True,
+                            })
+
+                    # Batter props (top 4 by wRC+ from each team via batter_stats)
+                    if batter_stats is not None and not batter_stats.empty:
+                        for _bat_team, _bat_opp, _bat_home in [(_home, _away, 1), (_away, _home, 0)]:
+                            _fg_key = _stats_key(_bat_team)
+                            _team_bats = batter_stats[
+                                batter_stats['Team'].str.upper() == _fg_key
+                            ].nlargest(4, 'wRC+') if 'wRC+' in batter_stats.columns else pd.DataFrame()
+
+                            for _, _brow in _team_bats.iterrows():
+                                _bname = _brow['Name']
+                                _bf = _batter_prop_features(_bname, _bat_opp, _bat_home,
+                                                            batter_stats, team_stats)
+                                if _bf is None:
+                                    continue
+                                if bh_model and bh_feat:
+                                    _feat_h = pd.DataFrame([{f: _bf['batter_hits'].get(f, 0) for f in bh_feat}])
+                                    _pred_h = float(bh_model.predict(_feat_h)[0])
+                                    _props.append({
+                                        'player': _bname, 'team': _bat_team, 'opp': _bat_opp,
+                                        'prop_type': 'Batter Hits', 'market': 'batter_hits',
+                                        'prediction': round(_pred_h, 2), 'mae': mae_bh,
+                                        'vegas_line': None, 'odds': -110,
+                                        'confidence': 0.52, 'direction': 'OVER', 'edge': 0.0,
+                                        'is_sp': False,
+                                    })
+                                if bt_model and bt_feat:
+                                    _feat_t = pd.DataFrame([{f: _bf['batter_tb'].get(f, 0) for f in bt_feat}])
+                                    _pred_t = float(bt_model.predict(_feat_t)[0])
+                                    _props.append({
+                                        'player': _bname, 'team': _bat_team, 'opp': _bat_opp,
+                                        'prop_type': 'Batter TB', 'market': 'batter_total_bases',
+                                        'prediction': round(_pred_t, 2), 'mae': mae_bt,
+                                        'vegas_line': None, 'odds': -110,
+                                        'confidence': 0.52, 'direction': 'OVER', 'edge': 0.0,
+                                        'is_sp': False,
+                                    })
+
+                    st.session_state[f'mlb_props_g{_g_idx}'] = _props
+                    _g_idx += 1
+        st.session_state['mlb_props_precalc_done'] = True
+
+    # Render game cards
+    _g_idx = 0
+    for _day, _day_games in schedule.items():
+        if not _day_games:
+            continue
+        st.subheader(_day)
+        for _gi in _day_games:
+            _home = _gi.get('home_team', '')
+            _away = _gi.get('away_team', '')
+            _time = _gi.get('game_time_et', 'TBD')
+            _gid  = f'{_away}@{_home}'
+            _pfx  = f'mlb_rpl_g{_g_idx}_'
+            _sels = st.session_state.get('mlb_rpl_selections', {})
+            _gc   = sum(1 for v in _sels.values() if v.get('game_id') == _gid)
+            _label = f"{_away} @ {_home}  |  {_time}"
+            if _gc > 0:
+                _label += f"  |  🪜 {_gc} legs"
+
+            with st.expander(_label, expanded=False):
+                _props = st.session_state.get(f'mlb_props_g{_g_idx}', [])
+                if not _props:
+                    st.caption("No prop predictions available for this game.")
+                    _g_idx += 1
+                    continue
+
+                # Show SP K props first, then batters
+                _sp_props  = [p for p in _props if p.get('is_sp')]
+                _bat_props = [p for p in _props if not p.get('is_sp')]
+
+                if _sp_props:
+                    st.markdown("**Starting Pitcher Props**")
+                    for _pi, _prop in enumerate(_sp_props):
+                        _lid  = f"mlb_{_home}_{_away}_sp_{_prop['player'].replace(' ','_')}_{_prop['market']}"
+                        _cbk  = f'{_pfx}sp_{_pi}'
+                        _in_sel = _lid in _sels
+                        _pred_str = f"{_prop['prediction']:.1f}"
+                        _c = st.columns([0.5, 3, 1.5, 1.5, 1])
+                        with _c[0]:
+                            _checked = st.checkbox("", key=_cbk, value=_in_sel)
+                        with _c[1]:
+                            st.write(f"**{_prop['player']}** ({_prop['team']}) vs {_prop['opp']}")
+                            st.caption(f"{_prop['prop_type']}")
+                        with _c[2]:
+                            st.write(f"Proj: **{_pred_str}**")
+                        with _c[3]:
+                            st.caption(f"MAE ±{_prop['mae']:.1f}")
+                        with _c[4]:
+                            st.write("-110")
+                        if _checked and not _in_sel:
+                            _mlb_rpl_add({
+                                'leg_id': _lid, 'game_id': _gid,
+                                'game_label': f'{_away} @ {_home}',
+                                'home_team': _home, 'away_team': _away,
+                                'bet_type': 'prop',
+                                'description': f"{_prop['player']} {_prop['prop_type']} OVER {_pred_str}",
+                                'confidence': _prop['confidence'],
+                                'direction': _prop['direction'],
+                                'vegas_line': _prop.get('vegas_line'),
+                                'odds': -110, 'market': _prop['market'],
+                                'player': _prop['player'], 'prop_type': _prop['prop_type'],
+                                'model_pred': _prop['prediction'], 'mae': _prop['mae'],
+                                'edge': _prop['edge'],
+                            })
+                            st.rerun()
+                        elif not _checked and _in_sel:
+                            _mlb_rpl_remove(_lid)
+                            st.rerun()
+
+                if _bat_props:
+                    st.divider()
+                    st.markdown("**Top Batter Props**")
+                    for _pi, _prop in enumerate(_bat_props[:8]):
+                        _lid  = f"mlb_{_home}_{_away}_bat_{_prop['player'].replace(' ','_')}_{_prop['market']}"
+                        _cbk  = f'{_pfx}bat_{_pi}'
+                        _in_sel = _lid in _sels
+                        _pred_str = f"{_prop['prediction']:.2f}"
+                        _c = st.columns([0.5, 3, 1.5, 1.5, 1])
+                        with _c[0]:
+                            _checked = st.checkbox("", key=_cbk, value=_in_sel)
+                        with _c[1]:
+                            st.write(f"**{_prop['player']}** ({_prop['team']})")
+                            st.caption(f"{_prop['prop_type']}")
+                        with _c[2]:
+                            st.write(f"Proj: **{_pred_str}**")
+                        with _c[3]:
+                            st.caption(f"MAE ±{_prop['mae']:.2f}")
+                        with _c[4]:
+                            st.write("-110")
+                        if _checked and not _in_sel:
+                            _mlb_rpl_add({
+                                'leg_id': _lid, 'game_id': _gid,
+                                'game_label': f'{_away} @ {_home}',
+                                'home_team': _home, 'away_team': _away,
+                                'bet_type': 'prop',
+                                'description': f"{_prop['player']} {_prop['prop_type']} OVER {_pred_str}",
+                                'confidence': _prop['confidence'],
+                                'direction': _prop['direction'],
+                                'vegas_line': _prop.get('vegas_line'),
+                                'odds': -110, 'market': _prop['market'],
+                                'player': _prop['player'], 'prop_type': _prop['prop_type'],
+                                'model_pred': _prop['prediction'], 'mae': _prop['mae'],
+                                'edge': _prop['edge'],
+                            })
+                            st.rerun()
+                        elif not _checked and _in_sel:
+                            _mlb_rpl_remove(_lid)
+                            st.rerun()
+
+            _g_idx += 1
+
+
+# ── Parlay Ladder tab (item 32) ────────────────────────────────────────────────
+
+def _render_tab_ladder():
+    st.header("🪜 MLB Parlay Ladder")
+
+    import parlay_math as _pm
+
+    _sels = st.session_state.get('mlb_rpl_selections', {})
+
+    if len(_sels) < 3:
+        st.info(
+            f"Select at least **3 legs** from the **Player Props** tab to build a ladder. "
+            f"Currently selected: **{len(_sels)}** legs."
+        )
+        st.caption("Go to the Player Props tab → expand game cards → toggle checkboxes.")
+        return
+
+    _legs = sorted(_sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
+    _corr_flags = _pm.check_correlations(_legs)
+
+    _bankroll = int(st.session_state.get('mlb_bankroll', 1000))
+    _max_exp  = int(_bankroll * 0.25)
+    _ladder_budget = st.slider(
+        "Total Ladder Stake ($)",
+        min_value=10, max_value=max(10, _max_exp),
+        value=min(50, max(10, _max_exp)),
+        step=5, key='mlb_rpl_ladder_budget',
+        help=f"25% max daily exposure cap: ${_max_exp}",
+    )
+
+    _tiers       = _pm.optimize_tiers(_legs, _ladder_budget)
+    _tier_results = _pm.compute_stakes(_tiers, _ladder_budget)
+
+    _max_payout    = sum(t.get('payout', 0) for t in _tier_results)
+    _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
+    _be_ok         = _banker_payout >= _ladder_budget
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Legs",  f"{len(_legs)}",         f"{len(_tier_results)} Tiers")
+    c2.metric("Total Stake", f"${_ladder_budget}",    f"Bankroll: ${_bankroll:,}")
+    _roi = ((_max_payout - _ladder_budget) / _ladder_budget * 100) if _ladder_budget > 0 else 0
+    c3.metric("Max Payout",  f"${_max_payout:.0f}",   f"+{_roi:.0f}% ROI")
+    if _be_ok:
+        c4.markdown('<div class="signal-badge signal-strong">✅ BANKER COVERS COST</div>',
+                    unsafe_allow_html=True)
+    else:
+        _short = _ladder_budget - _banker_payout
+        c4.markdown(f'<div class="signal-badge signal-lean">⚠️ BANKER SHORT ${_short:.0f}</div>',
+                    unsafe_allow_html=True)
+
+    if _corr_flags:
+        with st.expander(f"⚠️ {len(_corr_flags)} Correlation Flags", expanded=False):
+            for _fl in _corr_flags:
+                st.warning(_fl['message'])
+
+    st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
+    st.divider()
+
+    _TIER_EMOJI = ['🏦', '📈', '🚀', '🌙']
+    for i, tier in enumerate(_tier_results):
+        with st.container(border=True):
+            _emoji = _TIER_EMOJI[i] if i < len(_TIER_EMOJI) else '🎯'
+            _n   = tier.get('n_legs', len(tier.get('legs', [])))
+            _am  = tier.get('combined_american', 0)
+            _am_str = f"+{_am}" if _am > 0 else str(_am)
+
+            h1, h2 = st.columns([3, 1])
+            with h1:
+                st.markdown(
+                    f"**Tier {i+1}: {tier['name']}** "
+                    f"<span style='color:#94a3b8'>— {tier.get('subtitle','')} · {_n} Legs</span>",
+                    unsafe_allow_html=True
+                )
+            with h2:
+                st.markdown(
+                    f"<div style='text-align:right;font-weight:bold;color:#22d3ee;font-size:1.2em'>{_am_str}</div>",
+                    unsafe_allow_html=True
+                )
+
+            _cp = tier.get('combined_prob', 0)
+            _cp_color = '#22c55e' if _cp > 0.3 else '#eab308' if _cp > 0.1 else '#ef4444'
+            st.markdown(
+                f"<div style='font-size:1.1em;font-weight:600;color:{_cp_color}'>Combined Probability: {_cp*100:.1f}%</div>",
+                unsafe_allow_html=True
+            )
+
+            for leg in tier.get('legs', []):
+                _desc  = leg.get('description', '')
+                _conf  = leg.get('confidence', 0)
+                _edge  = leg.get('edge', 0)
+                _badge = ('signal-lock'   if _conf >= 0.75 else
+                          'signal-strong' if _conf >= 0.65 else
+                          'signal-lean'   if _conf >= 0.55 else 'signal-pass')
+                l1, l2, l3 = st.columns([4, 2, 2])
+                l1.write(_desc)
+                l2.markdown(f"<span class='signal-badge {_badge}'>Edge {_edge:+.1f}</span>",
+                            unsafe_allow_html=True)
+                l3.caption(f"Prob: {_conf*100:.1f}%")
+
+            st.divider()
+            f1, f2, f3 = st.columns([2, 2, 2])
+            f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
+            f2.metric("If Win",     f"${tier.get('payout', 0):.2f}")
+            _tp = tier.get('combined_prob', 0)
+            f3.metric("Hit Rate",   f"{_tp*100:.1f}%")
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def render_mlb_app():
@@ -1072,6 +1559,9 @@ def render_mlb_app():
     pitcher_ratings  = load_mlb_pitcher_ratings()
     full_pitcher_ratings = load_mlb_full_pitcher_ratings()
     team_stats       = load_mlb_team_stats()
+    player_models    = load_mlb_player_models()
+    pitcher_season   = load_mlb_pitcher_season_stats()
+    batter_stats     = load_mlb_batter_stats()
 
     if model is None:
         st.error("MLB model not found. Run `python build_mlb_model.py` first.")
@@ -1108,7 +1598,10 @@ def render_mlb_app():
             except Exception:
                 pass
 
-    tab1, tab2, tab3 = st.tabs(["⚾ Game Predictor", "📅 Backtesting", "📋 Track Record"])
+    tab1, tab2, tab_props, tab_ladder, tab3 = st.tabs([
+        "⚾ Game Predictor", "📅 Backtesting",
+        "🏃 Player Props", "🪜 Parlay Ladder", "📋 Track Record",
+    ])
 
     with tab1:
         _render_tab1(model, features, accuracy, elo_ratings, pitcher_ratings, team_stats,
@@ -1116,6 +1609,12 @@ def render_mlb_app():
 
     with tab2:
         _render_tab2(model, features, accuracy)
+
+    with tab_props:
+        _render_tab_props(player_models, pitcher_season, batter_stats, team_stats)
+
+    with tab_ladder:
+        _render_tab_ladder()
 
     with tab3:
         _render_tab3()

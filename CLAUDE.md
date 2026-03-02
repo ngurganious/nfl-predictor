@@ -130,6 +130,7 @@ build_mlb_team_stats.py     # MLB team wOBA/ERA-/FIP-/wRC+ via pybaseball FanGra
 build_mlb_pitcher_ratings.py # SP quality z-scores (ERA-/FIP-/K-BB/WHIP) — specialty rating
 build_mlb_model.py          # Train MLB stacking ensemble → model_mlb_enhanced.pkl (58.0% acc)
 build_mlb_total_model.py    # Train MLB O/U Ridge model → model_mlb_total.pkl (61.4% O/U acc)
+build_mlb_player_model.py   # Train 4 MLB prop GBR models → model_mlb_player.pkl (pitcher K/ER, batter hits/TB)
 
 # NFL support modules
 feature_engineering.py      # 26-feature computation (ELO, EPA, form, QB, matchup)
@@ -154,6 +155,7 @@ model_nhl_total.pkl         # NHL O/U model
 elo_ratings.pkl             # NFL ELO ratings dict (all 32 teams)
 nhl_elo_ratings.pkl         # NHL ELO ratings dict (all teams)
 mlb_elo_ratings.pkl         # MLB ELO ratings dict (K=12, 33 team codes for historical continuity)
+model_mlb_player.pkl        # MLB prop GBR ensemble: pitcher K/ER + batter hits/TB (4 models)
 player_lookup.pkl           # NFL player ID → name/position lookup
 
 # Data files (CSV)
@@ -172,6 +174,8 @@ nhl_team_stats_historical.csv # NHL historical team stats
 mlb_games_processed.csv     # MLB game data 2000–2025 (60,870 rows, ELO + rolling form)
 mlb_pitcher_ratings.csv     # Historical per-(pitcher, season) SP quality z-scores (4,574 rows)
 mlb_pitcher_team_ratings.csv # Current season SP score per team
+mlb_pitcher_season_stats.csv # Pitcher k_per_9 + ip_per_gs per season (for SP prop predictions)
+mlb_batter_stats_current.csv # 2025 qualified batter stats: AVG/ISO/SLG/wOBA/wRC+ (for batter props)
 mlb_team_stats_current.csv  # MLB 2025 wOBA/ERA-/FIP-/wRC+ team stats
 mlb_team_stats_historical.csv # MLB per-team stats 2000–2025
 def_pass_stats.csv          # NFL defensive pass EPA per team/season

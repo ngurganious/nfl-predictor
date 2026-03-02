@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-02 (Phase 6 items 20–29 complete — MLB fully wired end-to-end)
+**Last updated:** 2026-03-02 (Phase 6 items 30–32 complete — MLB player props + parlay ladder)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -102,9 +102,9 @@
 | 27 | `mlb_game_week.py` — weekly schedule + confirmed SP / batting order helpers | Medium | ✅ | 2026-03-02 | `fetch_mlb_weekly_schedule()`, `get_mlb_team_roster_by_position()`, SP helpers · returns {} correctly off-season |
 | 28 | `mlb_app.py` — `render_mlb_app()`: Game Predictor + Backtesting tabs | High | ✅ | 2026-03-02 | 3 tabs: Game Predictor (weekly schedule + manual), Backtesting, Track Record · SP panel + full Kelly sizing |
 | 29 | Wire `app.py` — add MLB sport card on home page + `sport == 'mlb'` routing | Low | ✅ | 2026-03-02 | `app.py` home page 3-column layout · MLB card added · `elif sport == 'mlb'` router wired |
-| 30 | `build_mlb_player_model.py` — 4 GBR prop models: pitcher K's, earned runs, batter hits, total bases | High | 🔲 | — | Analogous to `build_player_model.py` (NFL) |
-| 31 | MLB: Player Props tab — game cards, prop predictions, selection toggles, Build Ladder button | Medium | 🔲 | — | Mirrors NFL Props tab UI (already built in Phase 5) |
-| 32 | MLB: Parlay Ladder — wire MLB prop legs into `parlay_math.py` (reuse existing engine) | Low | 🔲 | — | `parlay_math.py` already built in Phase 5 — minimal wiring only |
+| 30 | `build_mlb_player_model.py` — 4 GBR prop models: pitcher K's, earned runs, batter hits, total bases | High | ✅ | 2026-03-02 | 12,689 SP starts + 114,715 batter logs (2020–2025); pitcher K MAE ±1.72, ER ±1.53, hits ±0.695, TB ±1.44; saves model_mlb_player.pkl + mlb_pitcher_season_stats.csv + mlb_batter_stats_current.csv |
+| 31 | MLB: Player Props tab — game cards, prop predictions, selection toggles, Build Ladder button | Medium | ✅ | 2026-03-02 | `mlb_app.py` _render_tab_props() — SP K/ER + top 4 batters per team; checkboxes → mlb_rpl_selections; 5-tab layout added |
+| 32 | MLB: Parlay Ladder — wire MLB prop legs into `parlay_math.py` (reuse existing engine) | Low | ✅ | 2026-03-02 | `mlb_app.py` _render_tab_ladder() — reuses parlay_math.optimize_tiers + compute_stakes; mlb_rpl_selections session key |
 
 ---
 
