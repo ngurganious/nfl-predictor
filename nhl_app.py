@@ -176,6 +176,16 @@ def load_nhl_historical_features():
         return games, []
 
 
+@st.cache_data
+def load_nhl_prop_backtest():
+    try:
+        df = pd.read_csv('nhl_prop_backtest.csv')
+        df['game_date'] = pd.to_datetime(df['game_date'])
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 # ── ELO helpers ───────────────────────────────────────────────────────────────
 
 def get_nhl_elo(team: str, elo_ratings: dict) -> float:
@@ -1284,10 +1294,17 @@ def _render_tab2(model, features, accuracy):
         st.error("No NHL historical data found. Run `python build_nhl_games.py` first.")
         return
 
-    # Use last 5 seasons for backtesting
-    max_season = df_eng['season'].max()
-    min_bt_season = max_season - 4
-    data5 = df_eng[df_eng['season'] >= min_bt_season].copy()
+    all_seasons = sorted(df_eng['season'].unique(), reverse=True)
+    max_season  = all_seasons[0] if all_seasons else 2024
+    default_seasons = all_seasons[:5]
+    sel_game_seasons = st.multiselect(
+        "Game prediction seasons",
+        options=all_seasons,
+        default=default_seasons,
+        format_func=lambda s: f"{s}-{s+1}",
+        key='nhl_bt_game_seasons',
+    )
+    data5 = df_eng[df_eng['season'].isin(sel_game_seasons if sel_game_seasons else default_seasons)].copy()
 
     if feat_list and model:
         available_feats = [f for f in feat_list if f in data5.columns]
@@ -1307,7 +1324,7 @@ def _render_tab2(model, features, accuracy):
         c1, c2, c3 = st.columns(3)
         c1.metric("Model Accuracy", f"{overall_acc*100:.1f}%", delta=f"+{(overall_acc-baseline)*100:.1f}% vs baseline")
         c2.metric("Home Win Rate (baseline)", f"{baseline*100:.1f}%")
-        c3.metric("Seasons analyzed", f"{min_bt_season}-{max_season}")
+        c3.metric("Seasons analyzed", f"{data5['season'].min()}-{data5['season'].max()}")
         if accuracy:
             st.caption(f"Holdout accuracy (at training time): {accuracy*100:.1f}%")
 
@@ -1488,6 +1505,204 @@ def _render_tab2(model, features, accuracy):
             st.plotly_chart(fig2, use_container_width=True)
         except ImportError:
             pass
+
+        # ── Player Prop Accuracy History ──────────────────────────────────────
+        st.markdown("---")
+        st.subheader("Player Prop Accuracy History")
+        st.caption("2020-2025 · 5 seasons · expanding-mean features (no future leakage)")
+
+        prop_bt = load_nhl_prop_backtest()
+
+        if prop_bt.empty:
+            st.info("Run `python build_nhl_prop_backtest.py` to generate prop backtest data.")
+        else:
+            seasons_avail = sorted(prop_bt['season'].unique(), reverse=True)
+            sel_bt = st.multiselect(
+                "Filter seasons",
+                options=seasons_avail,
+                default=seasons_avail,
+                format_func=lambda s: f"{s}-{s+1}",
+                key='nhl_prop_bt_seasons',
+            )
+            fbt = prop_bt[prop_bt['season'].isin(sel_bt if sel_bt else seasons_avail)]
+
+            # Metric tiles
+            mc1, mc2, mc3 = st.columns(3)
+            for col, ptype, label in [
+                (mc1, 'goals',   'Goals O0.5 Hit Rate'),
+                (mc2, 'assists', 'Assists O0.5 Hit Rate'),
+                (mc3, 'shots',   'Shots O3.5 Hit Rate'),
+            ]:
+                sub = fbt[fbt['prop_type'] == ptype]
+                hr  = sub['hit'].mean() * 100 if not sub.empty else 0.0
+                col.metric(label, f"{hr:.1f}%", f"{len(sub):,} bets")
+
+            # Per-year table + ALL rollup
+            bt_rows = []
+            for s in sorted(prop_bt['season'].unique(), reverse=True):
+                sub = prop_bt[prop_bt['season'] == s]
+                if sub.empty:
+                    continue
+                n_bets = len(sub)
+                n_hit  = int(sub['hit'].sum())
+                flat_pnl = n_hit * (10.0 * 100 / 110) - (n_bets - n_hit) * 10.0
+                row = {'Season': f"{s}-{s+1}"}
+                for pt in ['goals', 'assists', 'shots']:
+                    p = sub[sub['prop_type'] == pt]
+                    row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
+                row['N Games'] = n_bets // 3
+                row['Flat P&L ($10)'] = f"${flat_pnl:+,.0f}"
+                bt_rows.append(row)
+            all_n = len(prop_bt); all_h = int(prop_bt['hit'].sum())
+            all_flat = all_h * (10.0 * 100 / 110) - (all_n - all_h) * 10.0
+            all_row = {'Season': 'ALL'}
+            for pt in ['goals', 'assists', 'shots']:
+                p = prop_bt[prop_bt['prop_type'] == pt]
+                all_row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
+            all_row['N Games'] = all_n // 3
+            all_row['Flat P&L ($10)'] = f"${all_flat:+,.0f}"
+            bt_rows.insert(0, all_row)
+            st.dataframe(pd.DataFrame(bt_rows), use_container_width=True, hide_index=True)
+
+            # Cumulative Flat vs Kelly P&L chart
+            try:
+                import plotly.graph_objects as go
+                sorted_bets = fbt.sort_values(['game_date', 'player_id', 'prop_type'])
+                flat_cum  = [0.0]
+                kelly_bk  = 1000.0
+                kelly_cum = [0.0]
+                b_odds    = 100.0 / 110.0
+                kelly_cap = kelly_bk * 0.01  # 1% cap
+
+                for _, r in sorted_bets.iterrows():
+                    won = bool(r['hit'])
+                    flat_cum.append(flat_cum[-1] + (10.0 * b_odds if won else -10.0))
+                    p     = float(r['predicted_prob'])
+                    fstar = max(0.0, (b_odds * p - (1 - p)) / b_odds) * 0.5
+                    stake = min(kelly_bk * fstar, kelly_cap)
+                    pnl   = (stake * b_odds if won else -stake)
+                    kelly_bk  = max(kelly_bk + pnl, 0.01)
+                    kelly_cum.append(kelly_cum[-1] + pnl)
+
+                fig_ph = go.Figure()
+                fig_ph.add_trace(go.Scatter(y=flat_cum,  name='Flat $10/bet',
+                                            line=dict(color='#3498db', width=1.5)))
+                fig_ph.add_trace(go.Scatter(y=kelly_cum, name='Half-Kelly (1% cap)',
+                                            line=dict(color='#9b59b6', width=2)))
+                fig_ph.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
+                fig_ph.update_layout(
+                    title='Cumulative Prop P&L — Flat vs Kelly',
+                    xaxis_title='Bet #', yaxis_title='Net P&L ($)',
+                    height=350, margin=dict(l=40, r=20, t=40, b=40),
+                    legend=dict(orientation='h', y=1.02),
+                )
+                st.plotly_chart(fig_ph, use_container_width=True)
+            except ImportError:
+                pass
+
+        # ── Parlay Ladder Simulator ───────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("Parlay Ladder Simulator")
+        st.caption("Slate-by-slate simulation · top 10 daily props · 4-tier ladder · $100/slate budget")
+
+        if prop_bt.empty:
+            st.info("Run `python build_nhl_prop_backtest.py` to enable ladder simulation.")
+        else:
+            try:
+                import parlay_math as _pm
+
+                _sim_seasons = sorted(prop_bt['season'].unique(), reverse=True)
+                _sel_sim = st.multiselect(
+                    "Ladder sim seasons",
+                    options=_sim_seasons,
+                    default=_sim_seasons,
+                    format_func=lambda s: f"{s}-{s+1}",
+                    key='nhl_ladder_sim_seasons',
+                )
+                _sbt = prop_bt[prop_bt['season'].isin(_sel_sim if _sel_sim else _sim_seasons)]
+
+                LADDER_BUDGET = 100.0
+                slate_dates   = sorted(_sbt['game_date'].dt.date.unique())
+                sim_results   = []
+                cum_pnl       = 0.0
+                cum_pnl_series = [0.0]
+                tier_hits     = {}  # tier subtitle → {hit, total}
+
+                for dt in slate_dates:
+                    day = _sbt[_sbt['game_date'].dt.date == dt].copy()
+                    if len(day) < 3:
+                        continue
+                    top10 = day.nlargest(10, 'predicted_prob')
+                    legs  = [
+                        {
+                            'odds':       -110,
+                            'confidence': float(r['predicted_prob']),
+                            'hit':        bool(r['hit']),
+                            'label':      f"{r['name']} {r['prop_type'].title()}",
+                        }
+                        for _, r in top10.iterrows()
+                    ]
+                    res = _pm.simulate_ladder_week(legs, LADDER_BUDGET)
+                    if res is None:
+                        continue
+                    cum_pnl += res['net_pnl']
+                    cum_pnl_series.append(cum_pnl)
+                    sim_results.append({'date': dt, 'net_pnl': res['net_pnl'],
+                                        'tiers_hit': res['tiers_hit'],
+                                        'total_tiers': res['total_tiers']})
+                    # Collect tier hit stats
+                    tiers = _pm.optimize_tiers(legs, LADDER_BUDGET)
+                    for i, t in enumerate(tiers):
+                        sub_key = t.get('subtitle', f"Tier {i+1}")
+                        if sub_key not in tier_hits:
+                            tier_hits[sub_key] = {'hit': 0, 'total': 0}
+                        tier_hits[sub_key]['total'] += 1
+                        if res['tier_hits'][i] if i < len(res['tier_hits']) else False:
+                            tier_hits[sub_key]['hit'] += 1
+
+                if sim_results:
+                    n_slates  = len(sim_results)
+                    n_pnl_pos = sum(1 for r in sim_results if r['net_pnl'] > 0)
+                    total_pnl = sum(r['net_pnl'] for r in sim_results)
+                    total_staked = n_slates * LADDER_BUDGET
+
+                    sc1, sc2, sc3, sc4 = st.columns(4)
+                    sc1.metric("Slates Simulated", f"{n_slates:,}")
+                    sc2.metric("Winning Slates", f"{n_pnl_pos/n_slates*100:.0f}%", f"{n_pnl_pos}")
+                    sc3.metric("Total Net P&L", f"${total_pnl:+,.0f}")
+                    sc4.metric("ROI", f"{total_pnl/total_staked*100:+.1f}%")
+
+                    # Tier hit rates
+                    if tier_hits:
+                        tier_cols = st.columns(len(tier_hits))
+                        for col, (subtitle, stats) in zip(tier_cols, tier_hits.items()):
+                            rate = stats['hit'] / max(stats['total'], 1) * 100
+                            col.metric(f"{subtitle} Hit Rate",
+                                       f"{rate:.0f}%", f"{stats['hit']}/{stats['total']}")
+
+                    # Cumulative P&L chart
+                    try:
+                        import plotly.graph_objects as go
+                        fig_ldr = go.Figure()
+                        fig_ldr.add_trace(go.Scatter(
+                            y=cum_pnl_series, name='Ladder Net P&L',
+                            line=dict(color='#22c55e', width=2),
+                            fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
+                        ))
+                        fig_ldr.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
+                        fig_ldr.update_layout(
+                            title=f'Cumulative Ladder P&L  (${LADDER_BUDGET:.0f}/slate)',
+                            xaxis_title='Slate #', yaxis_title='Cumulative Net P&L ($)',
+                            height=350, margin=dict(l=40, r=20, t=40, b=40),
+                        )
+                        st.plotly_chart(fig_ldr, use_container_width=True)
+                    except ImportError:
+                        pass
+                else:
+                    st.info("Not enough slate data for ladder simulation.")
+            except ImportError:
+                st.warning("parlay_math.py not found — ladder simulation unavailable.")
+
     else:
         st.warning("Feature engineering failed. Check that nhl_games_processed.csv exists.")
 

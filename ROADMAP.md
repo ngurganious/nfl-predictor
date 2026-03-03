@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-03 (Phase 7 added — enhanced backtesting spec with prop history + ladder simulator)
+**Last updated:** 2026-03-03 (Phase 7 items 33, 36 NHL, 37 NHL, 38 NHL complete)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -116,12 +116,12 @@
 
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
-| 33 | `build_nhl_prop_backtest.py` — read `.nhl_prop_log_cache.json`, reconstruct cumulative season-avg features (expanding mean, min 10 games), run `model_nhl_player.pkl` → `nhl_prop_backtest.csv` | Medium | 🔲 | — | Columns: player_id, name, team, position, season, game_date, prop_type, predicted_prob, predicted_value, actual_value, hit, is_forward, is_home · hit thresholds: goals ≥ 1, assists ≥ 1, shots > 3.5 |
+| 33 | `build_nhl_prop_backtest.py` — read `.nhl_prop_log_cache.json`, reconstruct cumulative season-avg features (expanding mean, min 10 games), run `model_nhl_player.pkl` → `nhl_prop_backtest.csv` | Medium | ✅ | 2026-03-03 | 184,662 rows · 5 seasons · goals 25.9% hit / assists 37.9% / shots 24.0% · near-perfect calibration · expanding mean warmup 10 games |
 | 34 | `build_mlb_prop_backtest.py` — read `.mlb_prop_log_cache.json`, run pitcher K/ER + batter hits/TB sub-models → `mlb_prop_backtest.csv` | Medium | 🔲 | — | 4 prop types · ~127K rows · hit: K > 4.5, ER < pred, hits ≥ 1, TB ≥ 2 |
 | 35 | `build_nfl_prop_backtest.py` — nfl_data_py game logs 2016–2024, rolling 4-game features, run NFL prop models → `nfl_prop_backtest.csv` | Medium | 🔲 | — | pass/rush/rec yards · hit = actual ≥ predicted value (OVER at −110) |
-| 36 | All sports: **Player Prop Accuracy History** section in Backtesting tab — year multi-select, per-year table + rollup row, prop type metric tiles, cumulative Flat vs Kelly P&L chart | Medium | 🔲 | — | Reads `*_prop_backtest.csv`; `@st.cache_data` pattern from `_mlb_backtest_results()` · data range labeled clearly |
-| 37 | All sports: **Parlay Ladder Simulator** section in Backtesting tab — slate-by-slate sim using top-10 daily props, `parlay_math.optimize_tiers()`, tier hit rates, cumulative P&L chart (Banker / Full Ladder / Break-even) | High | 🔲 | — | Reuses `parlay_math.py` · group `*_prop_backtest.csv` by game_date · each date = one slate |
-| 38 | Year filter standardization — NFL hardcoded-5y → multi-select; NHL all-seasons → multi-select with default last 5 | Low | 🔲 | — | NFL: `final_app.py` backtesting section · NHL: `nhl_app.py` `_render_tab2()` |
+| 36 | All sports: **Player Prop Accuracy History** section in Backtesting tab — year multi-select, per-year table + rollup row, prop type metric tiles, cumulative Flat vs Kelly P&L chart | Medium | 🚧 | — | NHL complete in `nhl_app.py` `_render_tab2()` — MLB and NFL pending build scripts |
+| 37 | All sports: **Parlay Ladder Simulator** section in Backtesting tab — slate-by-slate sim using top-10 daily props, `parlay_math.optimize_tiers()`, tier hit rates, cumulative P&L chart (Banker / Full Ladder / Break-even) | High | 🚧 | — | NHL complete in `nhl_app.py` `_render_tab2()` — MLB and NFL pending build scripts |
+| 38 | Year filter standardization — NFL hardcoded-5y → multi-select; NHL all-seasons → multi-select with default last 5 | Low | 🚧 | — | NHL complete: `nhl_app.py` `_render_tab2()` multi-select (default last 5) · NFL `final_app.py` pending |
 
 ---
 
