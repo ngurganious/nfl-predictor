@@ -67,6 +67,8 @@
 
 | # | Item | Completed | Notes |
 |---|------|-----------|-------|
+| — | NHL Props: auto-select top 10 props on schedule load; Parlay Ladder pre-built, user unselects what they don't want | 2026-03-03 | `nhl_app.py` `nhl_props_autosel_done` guard · bulk `_nhl_rpl_add` after top_picks built · `st.rerun()` to refresh checkboxes · refresh clears guard + selections |
+| — | NHL Props: sort game cards by best prop probability (not game time); Props tab game order independent of Game Predictor | 2026-03-03 | `nhl_app.py` `_sorted_cards` flat list by max `best_prob` DESC · day headers removed (date in card header) |
 | — | NHL Props/Ladder: fix game order to match Game Predictor; add date+time to expander headers and Ladder leg rows | 2026-03-03 | `nhl_game_week.py` within-day sort by `datetime_et` · `nhl_app.py` `date_lbl` in expander title + `game_date_label`/`game_time_et` stored in leg dict + shown in Parlay Ladder |
 | — | Kelly game card UI — align NHL caption format to match NFL (period separators, "to limit volatility") | 2026-03-01 | `nhl_app.py` lines 538–549 · help text + caption standardized |
 | — | PRD created — cross-sport constants, user requirements, gap analysis | 2026-03-01 | `PRD.md` created |

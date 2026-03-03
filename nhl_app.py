@@ -1041,10 +1041,11 @@ def _render_nhl_weekly_schedule(
         return
 
     if st.button("🔄 Refresh Schedule", key='nhl_refresh_sched'):
-        # Clear schedule, depth charts, pre-calc cache, and odds
+        # Clear schedule, depth charts, pre-calc cache, odds, and prop auto-selection
         for k in list(st.session_state.keys()):
             if (k.startswith('nhl_weekly_schedule') or k.startswith('nhl_dc_')
-                    or k in ('nhl_precalc_done', 'nhl_total_games', 'nhl_props_precalc_done', 'nhl_odds_by_game')
+                    or k in ('nhl_precalc_done', 'nhl_total_games', 'nhl_props_precalc_done',
+                             'nhl_odds_by_game', 'nhl_props_autosel_done', 'nhl_rpl_selections')
                     or (k.startswith('nhl_g') and ('_pred' in k or '_expanded' in k or '_ml_home' in k or '_ou_total' in k))
                     or k.startswith('nhl_props_g') or k.startswith('nhl_props_exp_')):
                 del st.session_state[k]
@@ -2031,6 +2032,40 @@ def _render_tab_props(player_models, skater_stats, team_stats):
             _gidx += 1
 
     top_picks = sorted(all_props_flat, key=lambda x: x[2]['best_prob'], reverse=True)[:10]
+
+    # Auto-select top 10 on first schedule load; user can uncheck what they don't want
+    if not st.session_state.get('nhl_props_autosel_done') and top_picks:
+        _implied = 110 / 210
+        for _gidx, _game_t, _prop_t in top_picks:
+            _name = _prop_t['name']
+            _home = _game_t['home_team']
+            _away = _game_t['away_team']
+            _lid = f"nhl_{_home}_{_away}_{_name.replace(' ', '_')}_{_prop_t['best_market']}"
+            _edge = round((_prop_t['best_prob'] - _implied) * 100, 1)
+            _nhl_rpl_add({
+                'leg_id':           _lid,
+                'game_id':          f"{_away}@{_home}",
+                'game_label':       f"{_away} @ {_home}",
+                'game_date_label':  _game_t.get('game_date_label', ''),
+                'game_time_et':     _game_t.get('game_time_et', ''),
+                'home_team':        _home,
+                'away_team':        _away,
+                'bet_type':         'prop',
+                'description':      f"{_name} — {_prop_t['best_desc']} · {_prop_t['best_pred']:.2f} {_prop_t['best_type'].lower()}",
+                'confidence':       _prop_t['best_prob'],
+                'direction':        'OVER',
+                'vegas_line':       None,
+                'odds':             -110,
+                'market':           _prop_t['best_market'],
+                'player':           _name,
+                'prop_type':        _prop_t['best_type'],
+                'model_pred':       _prop_t['best_pred'],
+                'mae':              _prop_t['best_mae'],
+                'edge':             _edge,
+            })
+        st.session_state['nhl_props_autosel_done'] = True
+        st.rerun()
+
     top_pick_leg_ids = {
         f"nhl_{g['home_team']}_{g['away_team']}_{p['name'].replace(' ', '_')}_{p['best_market']}"
         for _, g, p in top_picks

@@ -124,7 +124,7 @@ Every sport must have a Backtesting tab with:
 - Each selectable leg shows: bet description, model prediction, **prediction accuracy %**, Vegas line, edge, **selection toggle**
 - **All bet types are valid ladder legs** — outright wins, over/unders, and player props are treated equally and ranked together by confidence
 - **Cross-game selection:** toggle legs from multiple expanded game cards; selections persist across expand/collapse
-- **Auto-selection:** top 3 legs by confidence (across all games, all bet types) pre-selected as Banker base
+- **Auto-selection:** top 10 legs by model probability (across all games, all bet types) pre-selected on schedule load, Parlay Ladder pre-built; user unchecks any legs they don't want. Resets on Refresh Schedule.
 - **"🪜 Build Ladder" button** (visible when ≥3 legs selected) → navigates to Parlay Ladder tab
 
 #### Parlay Ladder Tab — 4 Sections

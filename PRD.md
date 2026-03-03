@@ -346,7 +346,7 @@ The Player Props tab mirrors the Game Predictor tab's card-based layout:
 3. **Any selectable leg** — moneyline wins, O/U leans, and player props are all valid ladder legs. They share the same selection toggle and ranking system (by model confidence %).
 4. **Cross-game selection** — user can expand multiple game cards simultaneously and toggle bets/props from different games. Selections persist across card expand/collapse.
 5. **Selection counter** — floating indicator showing "X legs selected" as user builds across games
-6. **Auto-selection** — top 3 legs by model confidence (across all games, all bet types) are pre-selected as the Banker base. Remaining eligible legs auto-assigned to ladder rungs in descending confidence.
+6. **Auto-selection** — top 10 legs by model probability (across all games, all bet types) are pre-selected on schedule load, Parlay Ladder pre-built; user unchecks any legs they don't want. Guard resets on Refresh Schedule so new top 10 are selected fresh each session.
 7. **User override** — user can deselect any auto-picked leg or manually toggle others on/off
 8. **Build button** — "🪜 Build Ladder" button (visible when ≥3 legs selected) finalizes selection and navigates to the Parlay Ladder tab with the full ladder rendered
 
