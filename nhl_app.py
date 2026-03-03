@@ -1891,7 +1891,7 @@ def _compute_game_props(home, away, player_models, skater_stats, team_stats):
     return sorted(props, key=lambda p: p['best_prob'], reverse=True)
 
 
-def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False, cb_key_override=None):
+def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False, cb_key_override=None, game_date_label='', game_time_et=''):
     name = prop['name']
     team = prop['team']
     pos  = prop['position']
@@ -1941,23 +1941,25 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
         _implied = 110 / 210  # implied prob at -110 odds (52.4%)
         _edge = round((prop['best_prob'] - _implied) * 100, 1)
         _nhl_rpl_add({
-            'leg_id':      leg_id,
-            'game_id':     f"{away}@{home}",
-            'game_label':  f"{away} @ {home}",
-            'home_team':   home,
-            'away_team':   away,
-            'bet_type':    'prop',
-            'description': f"{name} — {prop['best_desc']} · {prop['best_pred']:.2f} {prop['best_type'].lower()}",
-            'confidence':  prop['best_prob'],
-            'direction':   'OVER',
-            'vegas_line':  None,
-            'odds':        -110,
-            'market':      prop['best_market'],
-            'player':      name,
-            'prop_type':   prop['best_type'],
-            'model_pred':  prop['best_pred'],
-            'mae':         prop['best_mae'],
-            'edge':        _edge,
+            'leg_id':           leg_id,
+            'game_id':          f"{away}@{home}",
+            'game_label':       f"{away} @ {home}",
+            'game_date_label':  game_date_label,
+            'game_time_et':     game_time_et,
+            'home_team':        home,
+            'away_team':        away,
+            'bet_type':         'prop',
+            'description':      f"{name} — {prop['best_desc']} · {prop['best_pred']:.2f} {prop['best_type'].lower()}",
+            'confidence':       prop['best_prob'],
+            'direction':        'OVER',
+            'vegas_line':       None,
+            'odds':             -110,
+            'market':           prop['best_market'],
+            'player':           name,
+            'prop_type':        prop['best_type'],
+            'model_pred':       prop['best_pred'],
+            'mae':              prop['best_mae'],
+            'edge':             _edge,
         })
         st.rerun()
     elif not checked and in_sel:
@@ -2025,13 +2027,13 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     for _day, _games in schedule.items():
         for _game in _games:
             for _p in st.session_state.get(f'nhl_props_g{_gidx}', []):
-                all_props_flat.append((_gidx, _game['home_team'], _game['away_team'], _p))
+                all_props_flat.append((_gidx, _game, _p))
             _gidx += 1
 
-    top_picks = sorted(all_props_flat, key=lambda x: x[3]['best_prob'], reverse=True)[:10]
+    top_picks = sorted(all_props_flat, key=lambda x: x[2]['best_prob'], reverse=True)[:10]
     top_pick_leg_ids = {
-        f"nhl_{h}_{a}_{p['name'].replace(' ', '_')}_{p['best_market']}"
-        for _, h, a, p in top_picks
+        f"nhl_{g['home_team']}_{g['away_team']}_{p['name'].replace(' ', '_')}_{p['best_market']}"
+        for _, g, p in top_picks
     }
 
     if top_picks:
@@ -2044,9 +2046,11 @@ def _render_tab_props(player_models, skater_stats, team_stats):
         hc[3].caption("🎯 Assists  |  P%")
         hc[4].caption("🥅 Shots  |  P%")
         st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
-        for ti, (gidx, home_t, away_t, prop_t) in enumerate(top_picks):
-            _render_prop_row(prop_t, gidx, home_t, away_t, ti, sels,
-                             cb_key_override=f"nhl_tp_{ti}")
+        for ti, (gidx, game_t, prop_t) in enumerate(top_picks):
+            _render_prop_row(prop_t, gidx, game_t['home_team'], game_t['away_team'], ti, sels,
+                             cb_key_override=f"nhl_tp_{ti}",
+                             game_date_label=game_t.get('game_date_label', ''),
+                             game_time_et=game_t.get('game_time_et', ''))
         st.divider()
 
     total_prop_games = sum(len(v) for v in schedule.values())
@@ -2069,13 +2073,15 @@ def _render_tab_props(player_models, skater_stats, team_stats):
             home = game['home_team']
             away = game['away_team']
             time_et = game.get('game_time_et', 'TBD')
+            date_lbl = game.get('game_date_label', '')
             props = st.session_state.get(f'nhl_props_g{game_idx}', [])
             exp_key = f'nhl_props_exp_{game_idx}'
             # First game auto-expanded; rest collapsed unless user toggled
             is_open = st.session_state.get(exp_key, game_idx == 0)
 
+            _hdr_date = f"  ·  {date_lbl}" if date_lbl else ""
             with st.expander(
-                f"**{away} @ {home}**  ·  {time_et}  ·  {len(props)} players",
+                f"**{away} @ {home}**{_hdr_date}  ·  {time_et}  ·  {len(props)} players",
                 expanded=is_open,
             ):
                 if not props:
@@ -2099,7 +2105,8 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                     for ri, prop in enumerate(home_props):
                         lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
                         _render_prop_row(prop, game_idx, home, away, ri, sels,
-                                         is_top_pick=(lid in top_pick_leg_ids))
+                                         is_top_pick=(lid in top_pick_leg_ids),
+                                         game_date_label=date_lbl, game_time_et=time_et)
 
                 if away_props:
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -2107,7 +2114,8 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                     for ri, prop in enumerate(away_props):
                         lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
                         _render_prop_row(prop, game_idx, home, away, ri + 20, sels,
-                                         is_top_pick=(lid in top_pick_leg_ids))
+                                         is_top_pick=(lid in top_pick_leg_ids),
+                                         game_date_label=date_lbl, game_time_et=time_et)
 
             game_idx += 1
 
@@ -2210,12 +2218,16 @@ def _render_tab_ladder_nhl():
                 mae   = leg.get('mae')
                 ptype = leg.get('prop_type', '')
                 glabel = leg.get('game_label', '')
+                gdate  = leg.get('game_date_label', '')
+                gtime  = leg.get('game_time_et', '')
+                _dt_str = f"  ·  {gdate}  {gtime}".rstrip() if (gdate or gtime) else ""
                 pred_str = (f"Pred: {pred:.2f} {ptype.lower()}  ·  MAE ±{mae:.2f}"
                             if pred is not None and ptype else "")
                 l1, l2, l3 = st.columns([4, 2, 2])
                 l1.markdown(
                     f"{leg.get('description', '')}"
                     f"<br><span style='color:#64748b;font-size:0.78em'>{glabel}"
+                    f"{_dt_str}"
                     f"{('  ·  ' + pred_str) if pred_str else ''}</span>",
                     unsafe_allow_html=True,
                 )

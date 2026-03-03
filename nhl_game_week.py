@@ -175,6 +175,13 @@ def fetch_nhl_weekly_schedule(nhl_client) -> Dict[str, List[Dict]]:
         return _date.max
     by_day_sorted = dict(sorted(by_day.items(), key=_day_sort_key))
 
+    # Sort games within each day by start time
+    _DT_MAX = datetime(9999, 1, 1, tzinfo=timezone.utc)
+    for _dk in by_day_sorted:
+        by_day_sorted[_dk].sort(
+            key=lambda g: g['datetime_et'] if g['datetime_et'] is not None else _DT_MAX
+        )
+
     total = sum(len(v) for v in by_day_sorted.values())
     logger.info(f"NHL weekly schedule: {total} games across {len(by_day_sorted)} days")
     return by_day_sorted
