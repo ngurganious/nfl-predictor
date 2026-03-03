@@ -2066,58 +2066,62 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 st.session_state[f'nhl_props_exp_{i}'] = False
             st.rerun()
 
-    game_idx = 0
-    for day, games in schedule.items():
-        st.markdown(f"### {day}")
-        for game in games:
-            home = game['home_team']
-            away = game['away_team']
-            time_et = game.get('game_time_et', 'TBD')
-            date_lbl = game.get('game_date_label', '')
-            props = st.session_state.get(f'nhl_props_g{game_idx}', [])
-            exp_key = f'nhl_props_exp_{game_idx}'
-            # First game auto-expanded; rest collapsed unless user toggled
-            is_open = st.session_state.get(exp_key, game_idx == 0)
+    # Sort game cards globally by highest best_prob in that game (descending)
+    _sorted_cards = []
+    _ci = 0
+    for _day, _games in schedule.items():
+        for _game in _games:
+            _p_list = st.session_state.get(f'nhl_props_g{_ci}', [])
+            _max_p = max((p['best_prob'] for p in _p_list), default=0)
+            _sorted_cards.append((_ci, _game, _max_p))
+            _ci += 1
+    _sorted_cards.sort(key=lambda x: x[2], reverse=True)
 
-            _hdr_date = f"  ·  {date_lbl}" if date_lbl else ""
-            with st.expander(
-                f"**{away} @ {home}**{_hdr_date}  ·  {time_et}  ·  {len(props)} players",
-                expanded=is_open,
-            ):
-                if not props:
-                    st.caption("No player data available for this matchup.")
-                    game_idx += 1
-                    continue
+    for _di, (game_idx, game, _) in enumerate(_sorted_cards):
+        home = game['home_team']
+        away = game['away_team']
+        time_et = game.get('game_time_et', 'TBD')
+        date_lbl = game.get('game_date_label', '')
+        props = st.session_state.get(f'nhl_props_g{game_idx}', [])
+        exp_key = f'nhl_props_exp_{game_idx}'
+        is_open = st.session_state.get(exp_key, _di == 0)
 
-                hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
-                hc[0].caption("Pick")
-                hc[1].caption("Player")
-                hc[2].caption("⚽ Goals  |  P(scorer)")
-                hc[3].caption("🎯 Assists")
-                hc[4].caption("🥅 Shots")
-                st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
+        _hdr_date = f"  ·  {date_lbl}" if date_lbl else ""
+        with st.expander(
+            f"**{away} @ {home}**{_hdr_date}  ·  {time_et}  ·  {len(props)} players",
+            expanded=is_open,
+        ):
+            if not props:
+                st.caption("No player data available for this matchup.")
+                continue
 
-                home_props = [p for p in props if p['team'] == home]
-                away_props = [p for p in props if p['team'] == away]
+            hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+            hc[0].caption("Pick")
+            hc[1].caption("Player")
+            hc[2].caption("⚽ Goals  |  P(scorer)")
+            hc[3].caption("🎯 Assists")
+            hc[4].caption("🥅 Shots")
+            st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
 
-                if home_props:
-                    st.caption(f"**{NHL_TEAM_NAMES.get(home, home)} (Home)**")
-                    for ri, prop in enumerate(home_props):
-                        lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
-                        _render_prop_row(prop, game_idx, home, away, ri, sels,
-                                         is_top_pick=(lid in top_pick_leg_ids),
-                                         game_date_label=date_lbl, game_time_et=time_et)
+            home_props = [p for p in props if p['team'] == home]
+            away_props = [p for p in props if p['team'] == away]
 
-                if away_props:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.caption(f"**{NHL_TEAM_NAMES.get(away, away)} (Away)**")
-                    for ri, prop in enumerate(away_props):
-                        lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
-                        _render_prop_row(prop, game_idx, home, away, ri + 20, sels,
-                                         is_top_pick=(lid in top_pick_leg_ids),
-                                         game_date_label=date_lbl, game_time_et=time_et)
+            if home_props:
+                st.caption(f"**{NHL_TEAM_NAMES.get(home, home)} (Home)**")
+                for ri, prop in enumerate(home_props):
+                    lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                    _render_prop_row(prop, game_idx, home, away, ri, sels,
+                                     is_top_pick=(lid in top_pick_leg_ids),
+                                     game_date_label=date_lbl, game_time_et=time_et)
 
-            game_idx += 1
+            if away_props:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.caption(f"**{NHL_TEAM_NAMES.get(away, away)} (Away)**")
+                for ri, prop in enumerate(away_props):
+                    lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                    _render_prop_row(prop, game_idx, home, away, ri + 20, sels,
+                                     is_top_pick=(lid in top_pick_leg_ids),
+                                     game_date_label=date_lbl, game_time_et=time_et)
 
 
 def _render_tab_ladder_nhl():
