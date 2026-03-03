@@ -101,12 +101,28 @@ Half-Kelly caps at 20% of bankroll to limit volatility.
 | Model | Ridge regression on residual (actual − Vegas line) |
 
 ### 5.6 Backtesting Tab — Standard
-Every sport must have a Backtesting tab with:
-- Last 5 seasons accuracy breakdown (by-season table)
-- Game-by-game results (season-selectable)
+Every sport must have a Backtesting tab with **three sections**:
+
+**Section 1 — Game Prediction Accuracy** (all sports ✅)
+- Year multi-select filter (default: last 5 available seasons)
+- By-season accuracy table + game-by-game results (season-selectable)
 - $10 flat moneyline simulation → cumulative P&L chart
 - Kelly Criterion strategy simulation (quarter / half / full Kelly selector)
 - Bankroll input in sidebar
+
+**Section 2 — Player Prop Accuracy History** (🔲 Phase 7 #36)
+- Requires `*_prop_backtest.csv` pre-built by offline scripts (Phase 7 #33–35)
+- Data range label: shows available seasons (e.g. "2020–2025 · 5 seasons")
+- Year multi-select filter (same scope as Section 1)
+- Per-year table with rollup ALL row at top: Season · Predictions · Hit Rate · Flat P&L · Kelly P&L · Best Prop Type
+- Prop type breakdown metric tiles: Hit Rate % · Flat ROI · Kelly ROI · n
+- Cumulative P&L chart: Flat $1/prop vs Half-Kelly, one line per prop type (Plotly)
+
+**Section 3 — Parlay Ladder Simulator** (🔲 Phase 7 #37)
+- Reuses `parlay_math.optimize_tiers()` on simulated daily top-10 props from backtest CSV
+- Summary metrics: Slates Simulated · Banker Hit % · Accelerator Hit % · Moonshot Hit %
+- Tier detail table: Tier · Avg Legs · Avg Odds · Hit Rate · Avg Payout · Net P&L
+- Cumulative P&L chart: Banker-only, Full Ladder, Break-even lines
 
 ### 5.7 Schedule View — Standard
 - "This Week's Games" mode: API-fed, grouped by day, all predictions pre-calculated on load
