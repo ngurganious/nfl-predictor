@@ -1356,6 +1356,71 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                     _g_idx += 1
         st.session_state['mlb_props_precalc_done'] = True
 
+    # ── Top Picks ──────────────────────────────────────────────────────────────
+    _all_props_flat = []
+    _tp_gidx = 0
+    for _day2, _day_games2 in schedule.items():
+        for _gi2 in _day_games2:
+            _home2 = _gi2.get('home_team', '')
+            _away2 = _gi2.get('away_team', '')
+            for _p2 in st.session_state.get(f'mlb_props_g{_tp_gidx}', []):
+                _all_props_flat.append((_home2, _away2, _p2))
+            _tp_gidx += 1
+
+    _top_picks = sorted(_all_props_flat, key=lambda x: x[2].get('confidence', 0), reverse=True)[:10]
+    _top_pick_leg_ids = set()
+    for _h2, _a2, _p2 in _top_picks:
+        if _p2.get('is_sp'):
+            _top_pick_leg_ids.add(f"mlb_{_h2}_{_a2}_sp_{_p2['player'].replace(' ', '_')}_{_p2['market']}")
+        else:
+            _top_pick_leg_ids.add(f"mlb_{_h2}_{_a2}_bat_{_p2['player'].replace(' ', '_')}_{_p2['market']}")
+
+    if _top_picks:
+        st.markdown("### 🏆 Top Picks")
+        st.caption("Top 10 highest-confidence props across today's slate — sorted by model confidence")
+        for _ti, (_h2, _a2, _p2) in enumerate(_top_picks):
+            if _p2.get('is_sp'):
+                _lid2 = f"mlb_{_h2}_{_a2}_sp_{_p2['player'].replace(' ', '_')}_{_p2['market']}"
+            else:
+                _lid2 = f"mlb_{_h2}_{_a2}_bat_{_p2['player'].replace(' ', '_')}_{_p2['market']}"
+            _sels2 = st.session_state.get('mlb_rpl_selections', {})
+            _in_sel2 = _lid2 in _sels2
+            _cbk2 = f'mlb_tp_{_ti}'
+            _pred_str2 = f"{_p2['prediction']:.2f}"
+            _gid2 = f"{_a2}@{_h2}"
+            _c2 = st.columns([0.5, 3, 1.5, 1.5, 1])
+            with _c2[0]:
+                _chk2 = st.checkbox("", key=_cbk2, value=_in_sel2)
+            with _c2[1]:
+                st.write(f"**{_p2['player']}** ({_p2['team']}) — {_h2} vs {_a2}")
+                st.caption(f"{_p2['prop_type']}  ·  Conf: {_p2['confidence']:.0%}")
+            with _c2[2]:
+                st.write(f"Proj: **{_pred_str2}**")
+            with _c2[3]:
+                st.caption(f"MAE ±{_p2['mae']:.2f}")
+            with _c2[4]:
+                st.write("-110")
+            if _chk2 and not _in_sel2:
+                _mlb_rpl_add({
+                    'leg_id': _lid2, 'game_id': _gid2,
+                    'game_label': f'{_a2} @ {_h2}',
+                    'home_team': _h2, 'away_team': _a2,
+                    'bet_type': 'prop',
+                    'description': f"{_p2['player']} {_p2['prop_type']} OVER {_pred_str2}",
+                    'confidence': _p2['confidence'],
+                    'direction': _p2['direction'],
+                    'vegas_line': _p2.get('vegas_line'),
+                    'odds': -110, 'market': _p2['market'],
+                    'player': _p2['player'], 'prop_type': _p2['prop_type'],
+                    'model_pred': _p2['prediction'], 'mae': _p2['mae'],
+                    'edge': _p2['edge'],
+                })
+                st.rerun()
+            elif not _chk2 and _in_sel2:
+                _mlb_rpl_remove(_lid2)
+                st.rerun()
+        st.divider()
+
     # Render game cards
     _g_idx = 0
     for _day, _day_games in schedule.items():
@@ -1396,7 +1461,8 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                         with _c[0]:
                             _checked = st.checkbox("", key=_cbk, value=_in_sel)
                         with _c[1]:
-                            st.write(f"**{_prop['player']}** ({_prop['team']}) vs {_prop['opp']}")
+                            _star = "⭐ " if _lid in _top_pick_leg_ids else ""
+                            st.write(f"**{_star}{_prop['player']}** ({_prop['team']}) vs {_prop['opp']}")
                             st.caption(f"{_prop['prop_type']}")
                         with _c[2]:
                             st.write(f"Proj: **{_pred_str}**")
@@ -1436,7 +1502,8 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                         with _c[0]:
                             _checked = st.checkbox("", key=_cbk, value=_in_sel)
                         with _c[1]:
-                            st.write(f"**{_prop['player']}** ({_prop['team']})")
+                            _star = "⭐ " if _lid in _top_pick_leg_ids else ""
+                            st.write(f"**{_star}{_prop['player']}** ({_prop['team']})")
                             st.caption(f"{_prop['prop_type']}")
                         with _c[2]:
                             st.write(f"Proj: **{_pred_str}**")

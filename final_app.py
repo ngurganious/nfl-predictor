@@ -2297,6 +2297,100 @@ def render_nfl_app():
                                 _g_idx += 1
                     st.session_state['rpl_props_precalc_done'] = True
 
+                # ── Top Picks ──────────────────────────────────────────────
+                _nfl_all_legs_flat = []
+                _tp_gidx = 0
+                for _day3, _day_games3 in schedule.items():
+                    for _gi3 in _day_games3:
+                        _home3 = _gi3.get('home_team', '')
+                        _away3 = _gi3.get('away_team', '')
+                        for _gb in st.session_state.get(f'rpl_g{_tp_gidx}_game_bets', []):
+                            _nfl_all_legs_flat.append((_home3, _away3, False, _gb))
+                        for _pp in st.session_state.get(f'rpl_g{_tp_gidx}_props', []):
+                            _nfl_all_legs_flat.append((_home3, _away3, True, _pp))
+                        _tp_gidx += 1
+
+                _nfl_top_picks = sorted(_nfl_all_legs_flat, key=lambda x: x[3].get('confidence', 0), reverse=True)[:10]
+                _nfl_top_pick_leg_ids = set()
+                for _h3, _a3, _is_prop3, _item3 in _nfl_top_picks:
+                    if _is_prop3:
+                        _nfl_top_pick_leg_ids.add(f"nfl_{_h3}_{_a3}_prop_{_item3['player_abbr']}_{_item3['market']}")
+                    else:
+                        _nfl_top_pick_leg_ids.add(_item3['leg_id'])
+
+                if _nfl_top_picks:
+                    st.markdown("### 🏆 Top Picks")
+                    st.caption("Top 10 highest-confidence props across today's slate — sorted by confidence")
+                    for _ti3, (_h3, _a3, _is_prop3, _item3) in enumerate(_nfl_top_picks):
+                        if _is_prop3:
+                            _lid3 = f"nfl_{_h3}_{_a3}_prop_{_item3['player_abbr']}_{_item3['market']}"
+                        else:
+                            _lid3 = _item3['leg_id']
+                        _sels3 = st.session_state.get('rpl_selections', {})
+                        _in_sel3 = _lid3 in _sels3
+                        _cbk3 = f'nfl_tp_{_ti3}'
+                        _gid3 = f"{_a3}@{_h3}"
+                        if _is_prop3:
+                            _vl_str3 = f"{_item3['vegas_line']:.1f}" if _item3.get('vegas_line') else 'N/A'
+                            _c3 = st.columns([0.5, 2.5, 1.5, 1, 1, 1])
+                            with _c3[0]:
+                                _chk3 = st.checkbox("", key=_cbk3, value=_in_sel3)
+                            with _c3[1]:
+                                st.write(f"**{_item3['player']}** ({_item3['team']})")
+                                st.caption(f"{_item3['prop_type']} {_item3['direction']} {_vl_str3}  ·  {_h3} vs {_a3}")
+                            with _c3[2]:
+                                st.write(f"Pred: **{_item3['prediction']:.0f}** yds")
+                            with _c3[3]:
+                                st.write(f"**{_item3['confidence']*100:.1f}%**")
+                            with _c3[4]:
+                                st.write(f"{_item3['edge']:+.1f}")
+                            with _c3[5]:
+                                _os3 = f"+{_item3.get('odds', -110)}" if _item3.get('odds', -110) > 0 else str(_item3.get('odds', -110))
+                                st.write(_os3)
+                            if _chk3 and not _in_sel3:
+                                _rpl_add_selection({
+                                    'leg_id': _lid3, 'game_id': _gid3,
+                                    'game_label': f'{_a3} @ {_h3}',
+                                    'home_team': _h3, 'away_team': _a3,
+                                    'bet_type': 'prop',
+                                    'description': f"{_item3['player']} {_item3['prop_type']} {_item3['direction']} {_vl_str3}",
+                                    'confidence': _item3['confidence'],
+                                    'direction': _item3['direction'],
+                                    'vegas_line': _item3.get('vegas_line'),
+                                    'odds': _item3.get('odds', -110),
+                                    'market': _item3['market'],
+                                    'player': _item3['player'],
+                                    'prop_type': _item3['prop_type'],
+                                    'model_pred': _item3['prediction'],
+                                    'mae': _item3['mae'],
+                                    'edge': _item3['edge'],
+                                })
+                                st.rerun()
+                            elif not _chk3 and _in_sel3:
+                                _rpl_remove_selection(_lid3)
+                                st.rerun()
+                        else:
+                            _c3 = st.columns([0.5, 3, 1.5, 1.5, 1])
+                            with _c3[0]:
+                                _chk3 = st.checkbox("", key=_cbk3, value=_in_sel3)
+                            with _c3[1]:
+                                st.write(_item3['description'])
+                                st.caption(f"{_h3} vs {_a3}")
+                            with _c3[2]:
+                                st.write(f"Conf: **{_item3['confidence']*100:.1f}%**")
+                            with _c3[3]:
+                                st.write(f"Edge: {_item3['edge']:+.1f}%")
+                            with _c3[4]:
+                                _os3 = f"+{_item3['odds']}" if _item3['odds'] > 0 else str(_item3['odds'])
+                                st.write(_os3)
+                            if _chk3 and not _in_sel3:
+                                _rpl_add_selection(_item3)
+                                st.rerun()
+                            elif not _chk3 and _in_sel3:
+                                _rpl_remove_selection(_lid3)
+                                st.rerun()
+                    st.divider()
+
                 # Render game cards
                 _g_idx = 0
                 for _day, _day_games in schedule.items():
@@ -2357,7 +2451,8 @@ def render_nfl_app():
                                     with _c[0]:
                                         _checked = st.checkbox("", key=_cbk, value=_in_sel)
                                     with _c[1]:
-                                        st.write(f"**{_prop['player']}** ({_prop['team']})")
+                                        _star = "⭐ " if _lid in _nfl_top_pick_leg_ids else ""
+                                        st.write(f"**{_star}{_prop['player']}** ({_prop['team']})")
                                         _vl_str = f"{_prop['vegas_line']:.1f}" if _prop.get('vegas_line') else 'N/A'
                                         st.caption(f"{_prop['prop_type']} {_prop['direction']} {_vl_str}")
                                     with _c[2]:

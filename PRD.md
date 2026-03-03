@@ -336,6 +336,13 @@ The Player Props tab mirrors the Game Predictor tab's card-based layout:
    | Edge | Model prediction vs Vegas line delta |
    | **Selection toggle** | Checkbox to add this prop to the parlay ladder |
 
+   **Top Picks Panel** (standard for all sports — rendered above per-game expanders):
+   - Fixed 10 highest-confidence props surfaced at the top of the tab, above per-game expanders
+   - Sorted by model probability / confidence descending
+   - Same checkbox system as per-game section (shared `leg_id` → auto-synced; checking in Top Picks reflects in the per-game card and vice versa)
+   - Per-game card shows ⭐ badge next to any player already in Top Picks
+   - Applies to: NHL Player Props (`nhl_app.py`), MLB Player Props (`mlb_app.py`), NFL Player Props (`final_app.py`)
+
 3. **Any selectable leg** — moneyline wins, O/U leans, and player props are all valid ladder legs. They share the same selection toggle and ranking system (by model confidence %).
 4. **Cross-game selection** — user can expand multiple game cards simultaneously and toggle bets/props from different games. Selections persist across card expand/collapse.
 5. **Selection counter** — floating indicator showing "X legs selected" as user builds across games

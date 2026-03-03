@@ -1,6 +1,6 @@
 # EdgeIQ — Build Roadmap
 
-**Last updated:** 2026-03-02 (Phase 6 items 30–32 complete — MLB player props + parlay ladder)
+**Last updated:** 2026-03-03 (item 13 model retrained — Ridge replaces GBR for prop models)
 **Source of truth:** `PRD.md` §4.9 for requirements detail. `EdgeIQ.md` for product standards.
 
 > Claude: after completing any item, update status, fill in Completed date, and add a one-line note. See the Roadmap Rule in `CLAUDE.md`.
@@ -46,7 +46,7 @@
 
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
-| 10 | NHL: wire Odds API for live moneylines and O/U (already built in `apis/odds.py`) | Medium | 🔲 | — | Add `OddsClient` call in `nhl_app.py` data pipeline · PRD §4.6 |
+| 10 | NHL: wire Odds API for live moneylines and O/U (already built in `apis/odds.py`) | Medium | ✅ | 2026-03-03 | `nhl_app.py` `_render_nhl_weekly_schedule()`: fetch `get_nhl_odds()`, pre-populate ML/OU session state, pass live odds to pre-calc and each game expander; `📡 Live lines · draftkings` caption in expander; Refresh clears odds cache |
 | 11 | NHL: Stanley Cup Predictor tab — 16-seed bracket, ELO-based, conference + Cup odds | Medium | 🔲 | — | Mirror `final_app.py` Super Bowl Predictor tab · uses `nhl_elo_ratings.pkl` · PRD §3.2.2 |
 | 12 | NHL: Head-to-Head tab — historical matchup comparison | Medium | 🔲 | — | Mirror NFL H2H tab · `nhl_games_processed.csv` as data source · PRD §3.2.1 / §4.6 |
 
@@ -57,7 +57,7 @@
 
 | # | Item | Effort | Status | Completed | Notes |
 |---|------|--------|--------|-----------|-------|
-| 13 | NHL: Player props tab — goals, assists, shots on goal prediction models | High | 🔲 | — | New `build_nhl_player_model.py` · GBR models · new tab in `nhl_app.py` · PRD §4.6 |
+| 13 | NHL: Player props tab — goals, assists, shots on goal prediction models | High | ✅ | 2026-03-03 | `build_nhl_player_model.py` · Ridge wins all 3 (temporal CV) · Goals ±0.421 · Assists ±0.559 · Shots ±1.265 · 71,861 player-game rows · perfect P(1+) calibration across all 5 buckets (all "ok") · `nhl_skater_current_stats.csv` 876 skaters |
 | 14 | NHL: Positional line matchup engine — top line vs top pairing scoring | High | 🔲 | — | Mirror `defensive_matchup.py` for hockey lines · PRD §4.6 |
 
 ---

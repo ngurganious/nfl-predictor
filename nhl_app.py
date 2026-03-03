@@ -144,6 +144,23 @@ def load_nhl_full_goalie_ratings():
         return pd.DataFrame()
 
 
+@st.cache_resource
+def load_nhl_player_models():
+    try:
+        with open("model_nhl_player.pkl", "rb") as f:
+            return pickle.load(f)
+    except Exception:
+        return {}
+
+
+@st.cache_data
+def load_nhl_skater_stats():
+    try:
+        return pd.read_csv("nhl_skater_current_stats.csv")
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data
 def load_nhl_historical_features():
     """Load and engineer features for backtesting (cached)."""
@@ -650,6 +667,7 @@ def _render_nhl_game_expander(
     nhl_games: pd.DataFrame,
     nhl_client=None,
     full_goalie_ratings: pd.DataFrame = None,
+    live_lines: dict = None,
 ):
     """Render a single NHL game as a Streamlit expander with full lineup cards."""
     home = game['home_team']
@@ -697,6 +715,10 @@ def _render_nhl_game_expander(
             if game.get('is_outdoor'):
                 st.slider("Temp (°F)", 0, 50, 32, key=f"{pfx}_temp")
                 st.slider("Wind (mph)", 0, 30, 5, key=f"{pfx}_wind")
+
+        if live_lines and (live_lines.get('moneyline') or live_lines.get('total')):
+            _book = (live_lines.get('moneyline') or live_lines.get('total') or {}).get('book', '')
+            st.caption(f"📡 Live lines · {_book or 'Odds API'} · Edit fields above to override")
 
         # ── Starting Lineups ─────────────────────────────────────────────────
         st.divider()
@@ -1019,11 +1041,12 @@ def _render_nhl_weekly_schedule(
         return
 
     if st.button("🔄 Refresh Schedule", key='nhl_refresh_sched'):
-        # Clear schedule, depth charts, and pre-calc cache
+        # Clear schedule, depth charts, pre-calc cache, and odds
         for k in list(st.session_state.keys()):
             if (k.startswith('nhl_weekly_schedule') or k.startswith('nhl_dc_')
-                    or k == 'nhl_precalc_done' or k == 'nhl_total_games'
-                    or (k.startswith('nhl_g') and ('_pred' in k or '_expanded' in k))):
+                    or k in ('nhl_precalc_done', 'nhl_total_games', 'nhl_props_precalc_done', 'nhl_odds_by_game')
+                    or (k.startswith('nhl_g') and ('_pred' in k or '_expanded' in k or '_ml_home' in k or '_ou_total' in k))
+                    or k.startswith('nhl_props_g') or k.startswith('nhl_props_exp_')):
                 del st.session_state[k]
         st.rerun()
 
@@ -1047,6 +1070,42 @@ def _render_nhl_weekly_schedule(
     total_games = sum(len(v) for v in schedule.values())
     st.session_state['nhl_total_games'] = total_games
 
+    # ── Fetch live NHL odds (once per session) ────────────────────────────────
+    odds_key = 'nhl_odds_by_game'
+    if odds_key not in st.session_state:
+        try:
+            from apis.odds import OddsClient
+            _oc = OddsClient()
+            _all_nhl_odds = _oc.get_nhl_odds()
+            _odds_map = {}
+            for _g in _all_nhl_odds:
+                _odds_map[(_g['home_team'], _g['away_team'])] = _g
+            st.session_state[odds_key] = _odds_map
+        except Exception:
+            st.session_state[odds_key] = {}
+    odds_map = st.session_state.get(odds_key, {})
+
+    # ── Pre-populate ML/OU inputs from live odds (before expanders render) ────
+    _pidx = 0
+    for _day, _games in schedule.items():
+        for _game in _games:
+            _pfx = f"nhl_g{_pidx}"
+            _ml_key, _ou_key = f"{_pfx}_ml_home", f"{_pfx}_ou_total"
+            if _ml_key not in st.session_state or _ou_key not in st.session_state:
+                _g_odds = (odds_map.get((_game['home_team'], _game['away_team']))
+                           or odds_map.get((_game['away_team'], _game['home_team'])))
+                if _g_odds:
+                    _ml  = _g_odds.get('moneyline') or {}
+                    _tot = _g_odds.get('total') or {}
+                    if _ml_key not in st.session_state:
+                        _ml_val = (_ml.get('home') if _g_odds['home_team'] == _game['home_team']
+                                   else _ml.get('away'))
+                        if _ml_val is not None:
+                            st.session_state[_ml_key] = float(_ml_val)
+                    if _ou_key not in st.session_state and _tot.get('line') is not None:
+                        st.session_state[_ou_key] = float(_tot['line'])
+            _pidx += 1
+
     # ── Pre-calculate all predictions (once per schedule load) ────────────────
     if 'nhl_precalc_done' not in st.session_state and model is not None:
         with st.spinner(f"Pre-calculating predictions for {total_games} games..."):
@@ -1056,10 +1115,23 @@ def _render_nhl_weekly_schedule(
                     _pred_key = f"nhl_g{_idx}_pred"
                     if _pred_key not in st.session_state:
                         try:
+                            _home = _game['home_team']
+                            _away = _game['away_team']
+                            _g_odds = (odds_map.get((_home, _away))
+                                       or odds_map.get((_away, _home)))
+                            _pre_ml, _pre_ou = None, None
+                            if _g_odds:
+                                _ml  = _g_odds.get('moneyline') or {}
+                                _tot = _g_odds.get('total') or {}
+                                _pre_ml = (_ml.get('home') if _g_odds['home_team'] == _home
+                                           else _ml.get('away'))
+                                _pre_ou = _tot.get('line')
                             _r = run_nhl_prediction(
-                                _game['home_team'], _game['away_team'],
+                                _home, _away,
                                 model, features, elo_ratings, goalie_ratings,
                                 team_stats, total_model_pkg,
+                                moneyline_home=float(_pre_ml) if _pre_ml is not None else None,
+                                vegas_total=float(_pre_ou) if _pre_ou is not None else None,
                                 nhl_games=nhl_games,
                                 full_goalie_ratings=full_goalie_ratings,
                             )
@@ -1070,7 +1142,9 @@ def _render_nhl_weekly_schedule(
                     _idx += 1
         st.session_state['nhl_precalc_done'] = True
 
-    st.caption(f"Showing {total_games} games  ·  Predictions pre-calculated  ·  Expand a card for lineups")
+    odds_count = len(odds_map)
+    _odds_note = f" · 📡 {odds_count} live lines loaded" if odds_count else ""
+    st.caption(f"Showing {total_games} games  ·  Predictions pre-calculated{_odds_note}  ·  Expand a card for lineups")
 
     # ── Expand All / Collapse All ─────────────────────────────────────────────
     ec1, _, ec2 = st.columns([2, 6, 2])
@@ -1096,12 +1170,16 @@ def _render_nhl_weekly_schedule(
         st.markdown(f"### {day_display}  <small style='color:gray'>({date_lbl})</small>",
                     unsafe_allow_html=True)
         for game in games:
+            _home = game['home_team']
+            _away = game['away_team']
+            _g_odds = odds_map.get((_home, _away)) or odds_map.get((_away, _home))
             _render_nhl_game_expander(
                 game, game_idx,
                 model, features, elo_ratings, goalie_ratings,
                 team_stats, total_model_pkg, nhl_games,
                 nhl_client=nhl_client,
                 full_goalie_ratings=full_goalie_ratings,
+                live_lines=_g_odds,
             )
             game_idx += 1
 
@@ -1696,6 +1774,464 @@ def _render_nhl_track_record():
                     st.error(f"Import failed: {_imp_err}")
 
 
+# ── NHL Player Props helpers ───────────────────────────────────────────────────
+
+_NHL_FWD = {'C', 'L', 'R', 'LW', 'RW', 'F'}
+
+
+def _nhl_rpl_add(leg):
+    if 'nhl_rpl_selections' not in st.session_state:
+        st.session_state['nhl_rpl_selections'] = {}
+    st.session_state['nhl_rpl_selections'][leg['leg_id']] = leg
+
+
+def _nhl_rpl_remove(leg_id):
+    sels = st.session_state.get('nhl_rpl_selections', {})
+    sels.pop(leg_id, None)
+    st.session_state['nhl_rpl_selections'] = sels
+
+
+def _compute_game_props(home, away, player_models, skater_stats, team_stats):
+    import math
+    from scipy.stats import norm as _norm
+
+    if skater_stats is None or skater_stats.empty or not player_models:
+        return []
+
+    goals_pkg   = player_models.get('goals', {})
+    assists_pkg = player_models.get('assists', {})
+    shots_pkg   = player_models.get('shots', {})
+
+    def _opp_ctx(opp):
+        if team_stats is None or team_stats.empty or opp not in team_stats.index:
+            return {'opp_goals_against_pg': 2.8, 'opp_shots_against_pg': 29.0, 'opp_pk_pct': 0.80}
+        r = team_stats.loc[opp]
+        return {
+            'opp_goals_against_pg': float(r.get('goals_against_pg', 2.8)),
+            'opp_shots_against_pg': float(r.get('shots_against_pg', 29.0)),
+            'opp_pk_pct':           float(r.get('pk_pct', 0.80)),
+        }
+
+    props = []
+    for team, is_home_int, opp in [(home, 1, away), (away, 0, home)]:
+        ctx = _opp_ctx(opp)
+        team_sk = skater_stats[skater_stats['team'] == team].copy()
+        if team_sk.empty:
+            continue
+        team_sk = team_sk.sort_values('points_pg', ascending=False).head(5)
+
+        for _, sk in team_sk.iterrows():
+            pos = str(sk.get('position', 'C')).upper()
+            is_fwd = 1 if pos in _NHL_FWD else 0
+            base = {
+                'goals_pg':    float(sk.get('goals_pg', 0.25)),
+                'assists_pg':  float(sk.get('assists_pg', 0.35)),
+                'shots_pg':    float(sk.get('shots_pg', 2.5)),
+                'shooting_pct': float(sk.get('shooting_pct', 0.10)),
+                'toi_pg':      float(sk.get('toi_pg', 1000.0)),
+                'pp_goals_pg': float(sk.get('pp_goals_pg', 0.05)),
+                'is_forward':  is_fwd,
+                'is_home':     is_home_int,
+                **ctx,
+            }
+
+            def _pred(pkg):
+                feats = pkg.get('features', [])
+                if not feats or 'model' not in pkg:
+                    return None
+                X = [[base.get(f, 0.0) for f in feats]]
+                return float(pkg['model'].predict(X)[0])
+
+            g_pred = max(0.0, min(_pred(goals_pkg)   or base['goals_pg'],   2.0))
+            a_pred = max(0.0, min(_pred(assists_pkg) or base['assists_pg'], 2.5))
+            s_pred = max(0.5, min(_pred(shots_pkg)   or base['shots_pg'],  10.0))
+
+            g_prob = 1.0 - math.exp(-g_pred)
+            a_prob = 1.0 - math.exp(-a_pred)
+            s_mae  = shots_pkg.get('mae', 2.1) if shots_pkg else 2.1
+            s_prob = float(_norm.sf((3.5 - s_pred) / max(s_mae, 0.1)))
+
+            best_prob = max(g_prob, a_prob, s_prob)
+            if best_prob == g_prob:
+                best_type, best_desc = 'Goals',   'Anytime Goal Scorer'
+                best_pred, best_mae  = g_pred,    goals_pkg.get('mae', 0.35) if goals_pkg else 0.35
+                best_market = 'nhl_goals'
+            elif best_prob == a_prob:
+                best_type, best_desc = 'Assists', 'Anytime Assist'
+                best_pred, best_mae  = a_pred,    assists_pkg.get('mae', 0.45) if assists_pkg else 0.45
+                best_market = 'nhl_assists'
+            else:
+                best_type, best_desc = 'Shots',   'Shots O3.5'
+                best_pred, best_mae  = s_pred,    s_mae
+                best_market = 'nhl_shots'
+
+            props.append({
+                'player_id':    int(sk.get('player_id', 0)),
+                'name':         str(sk.get('name', 'Unknown')),
+                'team':         team,
+                'position':     pos,
+                'is_forward':   is_fwd,
+                'goals_pred':   g_pred,
+                'goals_prob':   g_prob,
+                'goals_mae':    goals_pkg.get('mae', 0.35) if goals_pkg else 0.35,
+                'assists_pred': a_pred,
+                'assists_prob': a_prob,
+                'assists_mae':  assists_pkg.get('mae', 0.45) if assists_pkg else 0.45,
+                'shots_pred':   s_pred,
+                'shots_prob':   s_prob,
+                'shots_mae':    s_mae,
+                'best_prob':    best_prob,
+                'best_type':    best_type,
+                'best_desc':    best_desc,
+                'best_pred':    best_pred,
+                'best_mae':     best_mae,
+                'best_market':  best_market,
+            })
+
+    return sorted(props, key=lambda p: p['best_prob'], reverse=True)
+
+
+def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False, cb_key_override=None):
+    name = prop['name']
+    team = prop['team']
+    pos  = prop['position']
+
+    leg_id = f"nhl_{home}_{away}_{name.replace(' ', '_')}_{prop['best_market']}"
+    in_sel = leg_id in sels
+    cb_key = cb_key_override if cb_key_override is not None else f"nhl_rpl_g{game_idx}_{team}_{rank_i}"
+
+    cols = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+
+    checked = cols[0].checkbox("Select", value=in_sel, key=cb_key, label_visibility='collapsed')
+
+    pos_color = '#22d3ee' if prop['is_forward'] else '#a78bfa'
+    prefix = "⭐ " if is_top_pick else ""
+    cols[1].markdown(
+        f"**{prefix}{name}** &nbsp;"
+        f"<span style='background:{pos_color};color:#0f172a;border-radius:4px;"
+        f"padding:1px 5px;font-size:0.75em;font-weight:700'>{pos}</span>&nbsp;{team}"
+        f"<br><span style='color:#64748b;font-size:0.78em'>{away} @ {home}</span>",
+        unsafe_allow_html=True,
+    )
+
+    def _stat_html(pred, prob, is_best, decimal=2):
+        pct = prob * 100
+        c = '#22c55e' if pct >= 55 else '#eab308' if pct >= 40 else '#94a3b8'
+        star = "&nbsp;<span style='color:#f59e0b'>★</span>" if is_best else ""
+        return (
+            f"<span style='color:#f1f5f9'>{pred:.{decimal}f}</span>"
+            f"&nbsp;<span style='color:{c};font-size:0.85em'>P:&nbsp;{pct:.0f}%{star}</span>"
+        )
+
+    best_market = prop['best_market']
+    cols[2].markdown(
+        _stat_html(prop['goals_pred'],   prop['goals_prob'],   best_market == 'nhl_goals',   decimal=2),
+        unsafe_allow_html=True,
+    )
+    cols[3].markdown(
+        _stat_html(prop['assists_pred'], prop['assists_prob'], best_market == 'nhl_assists', decimal=2),
+        unsafe_allow_html=True,
+    )
+    cols[4].markdown(
+        _stat_html(prop['shots_pred'],   prop['shots_prob'],   best_market == 'nhl_shots',   decimal=1),
+        unsafe_allow_html=True,
+    )
+
+    if checked and not in_sel:
+        _implied = 110 / 210  # implied prob at -110 odds (52.4%)
+        _edge = round((prop['best_prob'] - _implied) * 100, 1)
+        _nhl_rpl_add({
+            'leg_id':      leg_id,
+            'game_id':     f"{away}@{home}",
+            'game_label':  f"{away} @ {home}",
+            'home_team':   home,
+            'away_team':   away,
+            'bet_type':    'prop',
+            'description': f"{name} — {prop['best_desc']} · {prop['best_pred']:.2f} {prop['best_type'].lower()}",
+            'confidence':  prop['best_prob'],
+            'direction':   'OVER',
+            'vegas_line':  None,
+            'odds':        -110,
+            'market':      prop['best_market'],
+            'player':      name,
+            'prop_type':   prop['best_type'],
+            'model_pred':  prop['best_pred'],
+            'mae':         prop['best_mae'],
+            'edge':        _edge,
+        })
+        st.rerun()
+    elif not checked and in_sel:
+        _nhl_rpl_remove(leg_id)
+        st.rerun()
+
+
+def _render_tab_props(player_models, skater_stats, team_stats):
+    if not player_models:
+        st.info(
+            "ℹ️ Player prop models not trained yet.  \n"
+            "Run `python build_nhl_player_model.py` in your terminal to generate them (~5–10 min)."
+        )
+        return
+
+    schedule = st.session_state.get('nhl_weekly_schedule', {})
+    if not schedule:
+        st.info(
+            "📅 Load this week's games first — go to **🏒 Game Predictor** → "
+            "switch to *'This Week's Games'* → **Load / Refresh Schedule**."
+        )
+        return
+
+    sels = st.session_state.get('nhl_rpl_selections', {})
+    n_sels = len(sels)
+
+    hdr_col, ctr_col = st.columns([4, 2])
+    with hdr_col:
+        st.subheader("🎯 NHL Player Props")
+        st.caption("Model-predicted goals · assists · shots on goal  ·  Select legs to build a Parlay Ladder")
+    with ctr_col:
+        if n_sels > 0:
+            badge_color = '#22c55e' if n_sels >= 3 else '#eab308'
+            st.markdown(
+                f"<div style='background:{badge_color};color:#0f172a;border-radius:8px;"
+                f"padding:8px 14px;text-align:center;font-weight:700;font-size:0.95em;"
+                f"margin-top:8px'>✅ {n_sels} leg{'s' if n_sels != 1 else ''} selected</div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("Clear All", key='nhl_rpl_clear', use_container_width=True):
+                st.session_state['nhl_rpl_selections'] = {}
+                st.rerun()
+
+    if n_sels >= 3:
+        st.success("🪜 **3+ legs selected** — head to the **Parlay Ladder** tab to build your ladder.")
+
+    st.divider()
+
+    # Pre-compute prop predictions (cached per session)
+    if not st.session_state.get('nhl_props_precalc_done'):
+        all_games = [g for games in schedule.values() for g in games]
+        with st.spinner("Computing player prop predictions…"):
+            for idx, game in enumerate(all_games):
+                key = f'nhl_props_g{idx}'
+                if key not in st.session_state:
+                    st.session_state[key] = _compute_game_props(
+                        game['home_team'], game['away_team'],
+                        player_models, skater_stats, team_stats,
+                    )
+        st.session_state['nhl_props_precalc_done'] = True
+
+    # ── Top Picks ──────────────────────────────────────────────────────────────
+    all_props_flat = []
+    _gidx = 0
+    for _day, _games in schedule.items():
+        for _game in _games:
+            for _p in st.session_state.get(f'nhl_props_g{_gidx}', []):
+                all_props_flat.append((_gidx, _game['home_team'], _game['away_team'], _p))
+            _gidx += 1
+
+    top_picks = sorted(all_props_flat, key=lambda x: x[3]['best_prob'], reverse=True)[:10]
+    top_pick_leg_ids = {
+        f"nhl_{h}_{a}_{p['name'].replace(' ', '_')}_{p['best_market']}"
+        for _, h, a, p in top_picks
+    }
+
+    if top_picks:
+        st.markdown("### 🏆 Top Picks")
+        st.caption("Top 10 highest-confidence props across today's slate — sorted by model probability")
+        hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+        hc[0].caption("Pick")
+        hc[1].caption("Player")
+        hc[2].caption("⚽ Goals  |  P%  (★ = best bet)")
+        hc[3].caption("🎯 Assists  |  P%")
+        hc[4].caption("🥅 Shots  |  P%")
+        st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
+        for ti, (gidx, home_t, away_t, prop_t) in enumerate(top_picks):
+            _render_prop_row(prop_t, gidx, home_t, away_t, ti, sels,
+                             cb_key_override=f"nhl_tp_{ti}")
+        st.divider()
+
+    total_prop_games = sum(len(v) for v in schedule.values())
+    ea1, _, ea2 = st.columns([2, 6, 2])
+    with ea1:
+        if st.button("⬇ Expand All", key='nhl_props_expand_all', use_container_width=True):
+            for i in range(total_prop_games):
+                st.session_state[f'nhl_props_exp_{i}'] = True
+            st.rerun()
+    with ea2:
+        if st.button("⬆ Collapse All", key='nhl_props_collapse_all', use_container_width=True):
+            for i in range(total_prop_games):
+                st.session_state[f'nhl_props_exp_{i}'] = False
+            st.rerun()
+
+    game_idx = 0
+    for day, games in schedule.items():
+        st.markdown(f"### {day}")
+        for game in games:
+            home = game['home_team']
+            away = game['away_team']
+            time_et = game.get('game_time_et', 'TBD')
+            props = st.session_state.get(f'nhl_props_g{game_idx}', [])
+            exp_key = f'nhl_props_exp_{game_idx}'
+            # First game auto-expanded; rest collapsed unless user toggled
+            is_open = st.session_state.get(exp_key, game_idx == 0)
+
+            with st.expander(
+                f"**{away} @ {home}**  ·  {time_et}  ·  {len(props)} players",
+                expanded=is_open,
+            ):
+                if not props:
+                    st.caption("No player data available for this matchup.")
+                    game_idx += 1
+                    continue
+
+                hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+                hc[0].caption("Pick")
+                hc[1].caption("Player")
+                hc[2].caption("⚽ Goals  |  P(scorer)")
+                hc[3].caption("🎯 Assists")
+                hc[4].caption("🥅 Shots")
+                st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
+
+                home_props = [p for p in props if p['team'] == home]
+                away_props = [p for p in props if p['team'] == away]
+
+                if home_props:
+                    st.caption(f"**{NHL_TEAM_NAMES.get(home, home)} (Home)**")
+                    for ri, prop in enumerate(home_props):
+                        lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                        _render_prop_row(prop, game_idx, home, away, ri, sels,
+                                         is_top_pick=(lid in top_pick_leg_ids))
+
+                if away_props:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.caption(f"**{NHL_TEAM_NAMES.get(away, away)} (Away)**")
+                    for ri, prop in enumerate(away_props):
+                        lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                        _render_prop_row(prop, game_idx, home, away, ri + 20, sels,
+                                         is_top_pick=(lid in top_pick_leg_ids))
+
+            game_idx += 1
+
+
+def _render_tab_ladder_nhl():
+    st.header("🪜 NHL Parlay Ladder")
+
+    import parlay_math as _pm
+
+    sels = st.session_state.get('nhl_rpl_selections', {})
+
+    if len(sels) < 3:
+        st.info(
+            f"Select at least **3 legs** from the **Player Props** tab to build a ladder. "
+            f"Currently selected: **{len(sels)}** legs."
+        )
+        st.caption("Go to Player Props → expand game cards → check player rows.")
+        return
+
+    legs = sorted(sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
+    corr_flags = _pm.check_correlations(legs)
+
+    bankroll = int(st.session_state.get('nhl_bankroll', 1000))
+    max_exp  = max(10, int(bankroll * 0.25))
+    budget   = st.slider(
+        "Total Ladder Stake ($)",
+        min_value=10, max_value=max_exp,
+        value=min(50, max_exp),
+        step=5, key='nhl_rpl_ladder_budget',
+        help=f"25% max daily exposure cap: ${max_exp}",
+    )
+
+    tiers  = _pm.optimize_tiers(legs, budget)
+    result = _pm.compute_stakes(tiers, budget)
+
+    max_payout    = sum(t.get('payout', 0) for t in result)
+    banker_payout = result[0]['payout'] if result else 0
+    be_ok         = banker_payout >= budget
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Legs",  str(len(legs)),        f"{len(result)} Tiers")
+    c2.metric("Total Stake", f"${budget}",          f"Bankroll: ${bankroll:,}")
+    roi = ((max_payout - budget) / budget * 100) if budget > 0 else 0
+    c3.metric("Max Payout",  f"${max_payout:.0f}",  f"+{roi:.0f}% ROI")
+    if be_ok:
+        c4.markdown('<div class="signal-badge signal-strong">✅ BANKER COVERS COST</div>',
+                    unsafe_allow_html=True)
+    else:
+        short = budget - banker_payout
+        c4.markdown(
+            f'<div class="signal-badge signal-lean">⚠️ BANKER SHORT ${short:.0f}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if corr_flags:
+        with st.expander(f"⚠️ {len(corr_flags)} Correlation Flags", expanded=False):
+            for fl in corr_flags:
+                st.warning(fl['message'])
+
+    st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
+    st.divider()
+
+    _TIER_EMOJI = ['🏦', '📈', '🚀', '🌙']
+    for i, tier in enumerate(result):
+        with st.container(border=True):
+            emoji   = _TIER_EMOJI[i] if i < len(_TIER_EMOJI) else '🎯'
+            n_legs  = tier.get('n_legs', len(tier.get('legs', [])))
+            am      = tier.get('combined_american', 0)
+            am_str  = f"+{am}" if am > 0 else str(am)
+
+            h1, h2 = st.columns([3, 1])
+            with h1:
+                st.markdown(
+                    f"**{emoji} Tier {i+1}: {tier['name']}** "
+                    f"<span style='color:#94a3b8'>— {tier.get('subtitle','')} · {n_legs} Legs</span>",
+                    unsafe_allow_html=True,
+                )
+            with h2:
+                st.markdown(
+                    f"<div style='text-align:right;font-weight:bold;color:#22d3ee;"
+                    f"font-size:1.2em'>{am_str}</div>",
+                    unsafe_allow_html=True,
+                )
+
+            cp = tier.get('combined_prob', 0)
+            cp_color = '#22c55e' if cp > 0.3 else '#eab308' if cp > 0.1 else '#ef4444'
+            st.markdown(
+                f"<div style='font-size:1.1em;font-weight:600;color:{cp_color}'>"
+                f"Combined Probability: {cp*100:.1f}%</div>",
+                unsafe_allow_html=True,
+            )
+
+            for leg in tier.get('legs', []):
+                conf  = leg.get('confidence', 0)
+                edge  = leg.get('edge', 0)
+                badge = ('signal-lock'   if conf >= 0.75 else
+                         'signal-strong' if conf >= 0.65 else
+                         'signal-lean'   if conf >= 0.55 else 'signal-pass')
+                pred  = leg.get('model_pred')
+                mae   = leg.get('mae')
+                ptype = leg.get('prop_type', '')
+                glabel = leg.get('game_label', '')
+                pred_str = (f"Pred: {pred:.2f} {ptype.lower()}  ·  MAE ±{mae:.2f}"
+                            if pred is not None and ptype else "")
+                l1, l2, l3 = st.columns([4, 2, 2])
+                l1.markdown(
+                    f"{leg.get('description', '')}"
+                    f"<br><span style='color:#64748b;font-size:0.78em'>{glabel}"
+                    f"{('  ·  ' + pred_str) if pred_str else ''}</span>",
+                    unsafe_allow_html=True,
+                )
+                l2.markdown(
+                    f"<span class='signal-badge {badge}'>Edge {edge:+.1f}%</span>",
+                    unsafe_allow_html=True,
+                )
+                l3.caption(f"Prob: {conf*100:.1f}%")
+
+            st.divider()
+            f1, f2, f3 = st.columns(3)
+            f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
+            f2.metric("If Win",     f"${tier.get('payout', 0):.2f}")
+            f3.metric("Hit Rate",   f"{cp*100:.1f}%")
+
+
 # ── Main render function ───────────────────────────────────────────────────────
 
 def render_nhl_app():
@@ -1716,6 +2252,8 @@ def render_nhl_app():
     goalie_ratings       = load_nhl_goalie_ratings()
     team_stats           = load_nhl_team_stats()
     full_goalie_ratings  = load_nhl_full_goalie_ratings()
+    player_models        = load_nhl_player_models()
+    skater_stats         = load_nhl_skater_stats()
 
     # Sidebar — ELO rankings
     with st.sidebar:
@@ -1816,7 +2354,10 @@ def render_nhl_app():
         st.divider()
 
     # Tabs
-    tab1, tab2, tab3 = st.tabs(["🏒 Game Predictor", "📅 Backtesting", "📋 Track Record"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🏒 Game Predictor", "📅 Backtesting",
+        "🎯 Player Props", "🪜 Parlay Ladder", "📋 Track Record",
+    ])
 
     with tab1:
         _render_tab1(model, features, accuracy, elo_ratings, goalie_ratings, team_stats, total_model_pkg, nhl_games, full_goalie_ratings=full_goalie_ratings)
@@ -1825,4 +2366,10 @@ def render_nhl_app():
         _render_tab2(model, features, accuracy)
 
     with tab3:
+        _render_tab_props(player_models, skater_stats, team_stats)
+
+    with tab4:
+        _render_tab_ladder_nhl()
+
+    with tab5:
         _render_nhl_track_record()
