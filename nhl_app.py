@@ -1618,162 +1618,158 @@ def _render_tab2(model, features, accuracy):
         except ImportError:
             pass
 
-        # ── Player Prop Accuracy History ──────────────────────────────────────
-        st.markdown("---")
-        st.subheader("Player Prop Accuracy History")
-        st.caption("2020-2025 · 5 seasons · expanding-mean features (no future leakage)")
-
-        _bt_mtime = _prop_bt_mtime()
-        prop_bt = load_nhl_prop_backtest(_bt_mtime)
-
-        if prop_bt.empty:
-            st.info("Run `python build_nhl_prop_backtest.py` to generate prop backtest data.")
-        else:
-            seasons_avail = sorted(prop_bt['season'].unique(), reverse=True)
-            sel_bt = st.multiselect(
-                "Filter seasons",
-                options=seasons_avail,
-                default=seasons_avail,
-                format_func=lambda s: f"{s}-{s+1}",
-                key='nhl_prop_bt_seasons',
-            )
-            fbt = prop_bt[prop_bt['season'].isin(sel_bt if sel_bt else seasons_avail)]
-
-            # Metric tiles
-            mc1, mc2, mc3 = st.columns(3)
-            for col, ptype, label in [
-                (mc1, 'goals',   'Goals O0.5 Hit Rate'),
-                (mc2, 'assists', 'Assists O0.5 Hit Rate'),
-                (mc3, 'shots',   'Shots O3.5 Hit Rate'),
-            ]:
-                sub = fbt[fbt['prop_type'] == ptype]
-                hr  = sub['hit'].mean() * 100 if not sub.empty else 0.0
-                col.metric(label, f"{hr:.1f}%", f"{len(sub):,} bets")
-
-            # Per-year table + ALL rollup
-            bt_rows = []
-            for s in sorted(prop_bt['season'].unique(), reverse=True):
-                sub = prop_bt[prop_bt['season'] == s]
-                if sub.empty:
-                    continue
-                n_bets = len(sub)
-                n_hit  = int(sub['hit'].sum())
-                flat_pnl = n_hit * (10.0 * 100 / 110) - (n_bets - n_hit) * 10.0
-                row = {'Season': f"{s}-{s+1}"}
-                for pt in ['goals', 'assists', 'shots']:
-                    p = sub[sub['prop_type'] == pt]
-                    row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
-                row['N Games'] = n_bets // 3
-                row['Flat P&L ($10)'] = f"${flat_pnl:+,.0f}"
-                bt_rows.append(row)
-            all_n = len(prop_bt); all_h = int(prop_bt['hit'].sum())
-            all_flat = all_h * (10.0 * 100 / 110) - (all_n - all_h) * 10.0
-            all_row = {'Season': 'ALL'}
-            for pt in ['goals', 'assists', 'shots']:
-                p = prop_bt[prop_bt['prop_type'] == pt]
-                all_row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
-            all_row['N Games'] = all_n // 3
-            all_row['Flat P&L ($10)'] = f"${all_flat:+,.0f}"
-            bt_rows.insert(0, all_row)
-            st.dataframe(pd.DataFrame(bt_rows), use_container_width=True, hide_index=True)
-
-            # Cumulative Flat vs Kelly P&L chart
-            try:
-                import plotly.graph_objects as go
-                _pnl_seasons = tuple(sorted(sel_bt if sel_bt else seasons_avail))
-                flat_cum, kelly_cum = _nhl_prop_pnl_series(_pnl_seasons, _bt_mtime)
-
-                fig_ph = go.Figure()
-                fig_ph.add_trace(go.Scatter(y=flat_cum,  name='Flat $10/bet',
-                                            line=dict(color='#3498db', width=1.5)))
-                fig_ph.add_trace(go.Scatter(y=kelly_cum, name='Half-Kelly (1% cap)',
-                                            line=dict(color='#9b59b6', width=2)))
-                fig_ph.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
-                fig_ph.update_layout(
-                    title='Cumulative Prop P&L — Flat vs Kelly',
-                    xaxis_title='Bet #', yaxis_title='Net P&L ($)',
-                    height=350, margin=dict(l=40, r=20, t=40, b=40),
-                    legend=dict(orientation='h', y=1.02),
-                )
-                st.plotly_chart(fig_ph, use_container_width=True)
-            except ImportError:
-                pass
-
-        # ── Parlay Ladder Simulator ───────────────────────────────────────────
-        st.markdown("---")
-        st.subheader("Parlay Ladder Simulator")
-        st.caption("Slate-by-slate simulation · top 10 daily props · 4-tier ladder · $100/slate budget")
-
-        if prop_bt.empty:
-            st.info("Run `python build_nhl_prop_backtest.py` to enable ladder simulation.")
-        else:
-            _sim_seasons = sorted(prop_bt['season'].unique(), reverse=True)
-            _sel_sim = st.multiselect(
-                "Ladder sim seasons",
-                options=_sim_seasons,
-                default=_sim_seasons,
-                format_func=lambda s: f"{s}-{s+1}",
-                key='nhl_ladder_sim_seasons',
-            )
-            _active_seasons = tuple(sorted(_sel_sim if _sel_sim else _sim_seasons))
-
-            try:
-                sim_results, cum_pnl_series, tier_stats = _nhl_ladder_sim(_active_seasons, _bt_mtime)
-            except Exception as _e:
-                st.warning(f"Ladder simulation error: {_e}")
-                sim_results = []
-
-            if sim_results:
-                LADDER_BUDGET = 100.0
-                n_slates     = len(sim_results)
-                total_pnl    = sum(r['net_pnl'] for r in sim_results)
-                n_pnl_pos    = sum(1 for r in sim_results if r['net_pnl'] > 0)
-                total_staked = n_slates * LADDER_BUDGET
-
-                sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Slates Simulated", f"{n_slates:,}")
-                sc2.metric("Winning Slates", f"{n_pnl_pos/n_slates*100:.0f}%", f"{n_pnl_pos}")
-                sc3.metric("Total Net P&L", f"${total_pnl:+,.0f}")
-                sc4.metric("ROI", f"{total_pnl/total_staked*100:+.1f}%")
-
-                # Tier hit rates — canonical order
-                if tier_stats:
-                    _TIER_ORDER = ['Banker', 'Accelerator 1', 'Accelerator 2', 'Moonshot']
-                    ordered = [(k, tier_stats[k]) for k in _TIER_ORDER if k in tier_stats]
-                    ordered += [(k, v) for k, v in tier_stats.items() if k not in _TIER_ORDER]
-                    st.markdown("**Tier Hit Rates**")
-                    tier_cols = st.columns(len(ordered))
-                    for col, (label, stats) in zip(tier_cols, ordered):
-                        rate = stats['hit'] / max(stats['total'], 1) * 100
-                        col.metric(
-                            f"{label}",
-                            f"{rate:.0f}%",
-                            f"{stats['hit']}/{stats['total']} slates",
-                        )
-
-                # Cumulative P&L chart
-                try:
-                    import plotly.graph_objects as go
-                    fig_ldr = go.Figure()
-                    fig_ldr.add_trace(go.Scatter(
-                        y=cum_pnl_series, name='Ladder Net P&L',
-                        line=dict(color='#22c55e', width=2),
-                        fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
-                    ))
-                    fig_ldr.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
-                    fig_ldr.update_layout(
-                        title=f'Cumulative Ladder P&L  (${LADDER_BUDGET:.0f}/slate)',
-                        xaxis_title='Slate #', yaxis_title='Cumulative Net P&L ($)',
-                        height=350, margin=dict(l=40, r=20, t=40, b=40),
-                    )
-                    st.plotly_chart(fig_ldr, use_container_width=True)
-                except ImportError:
-                    pass
-            else:
-                st.info("Not enough slate data for ladder simulation (need ≥10 props per day).")
-
     else:
         st.warning("Feature engineering failed. Check that nhl_games_processed.csv exists.")
+
+    # ── Player Prop Accuracy History ──────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Player Prop Accuracy History")
+    st.caption("2020-2025 · 5 seasons · expanding-mean features (no future leakage)")
+
+    _bt_mtime = _prop_bt_mtime()
+    prop_bt = load_nhl_prop_backtest(_bt_mtime)
+
+    if prop_bt.empty:
+        st.info("Run `python build_nhl_prop_backtest.py` to generate prop backtest data.")
+    else:
+        seasons_avail = sorted(prop_bt['season'].unique(), reverse=True)
+        sel_bt = st.multiselect(
+            "Filter seasons",
+            options=seasons_avail,
+            default=seasons_avail,
+            format_func=lambda s: f"{s}-{s+1}",
+            key='nhl_prop_bt_seasons',
+        )
+        fbt = prop_bt[prop_bt['season'].isin(sel_bt if sel_bt else seasons_avail)]
+
+        # Metric tiles
+        mc1, mc2, mc3 = st.columns(3)
+        for col, ptype, label in [
+            (mc1, 'goals',   'Goals O0.5 Hit Rate'),
+            (mc2, 'assists', 'Assists O0.5 Hit Rate'),
+            (mc3, 'shots',   'Shots O3.5 Hit Rate'),
+        ]:
+            sub = fbt[fbt['prop_type'] == ptype]
+            hr  = sub['hit'].mean() * 100 if not sub.empty else 0.0
+            col.metric(label, f"{hr:.1f}%", f"{len(sub):,} bets")
+
+        # Per-year table + ALL rollup
+        bt_rows = []
+        for s in sorted(prop_bt['season'].unique(), reverse=True):
+            sub = prop_bt[prop_bt['season'] == s]
+            if sub.empty:
+                continue
+            n_bets = len(sub)
+            n_hit  = int(sub['hit'].sum())
+            flat_pnl = n_hit * (10.0 * 100 / 110) - (n_bets - n_hit) * 10.0
+            row = {'Season': f"{s}-{s+1}"}
+            for pt in ['goals', 'assists', 'shots']:
+                p = sub[sub['prop_type'] == pt]
+                row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
+            row['N Games'] = n_bets // 3
+            row['Flat P&L ($10)'] = f"${flat_pnl:+,.0f}"
+            bt_rows.append(row)
+        all_n = len(prop_bt); all_h = int(prop_bt['hit'].sum())
+        all_flat = all_h * (10.0 * 100 / 110) - (all_n - all_h) * 10.0
+        all_row = {'Season': 'ALL'}
+        for pt in ['goals', 'assists', 'shots']:
+            p = prop_bt[prop_bt['prop_type'] == pt]
+            all_row[f"{pt.title()} Hit%"] = f"{p['hit'].mean()*100:.1f}%" if not p.empty else '-'
+        all_row['N Games'] = all_n // 3
+        all_row['Flat P&L ($10)'] = f"${all_flat:+,.0f}"
+        bt_rows.insert(0, all_row)
+        st.dataframe(pd.DataFrame(bt_rows), use_container_width=True, hide_index=True)
+
+        # Cumulative Flat vs Kelly P&L chart
+        try:
+            import plotly.graph_objects as go
+            _pnl_seasons = tuple(sorted(sel_bt if sel_bt else seasons_avail))
+            flat_cum, kelly_cum = _nhl_prop_pnl_series(_pnl_seasons, _bt_mtime)
+
+            fig_ph = go.Figure()
+            fig_ph.add_trace(go.Scatter(y=flat_cum,  name='Flat $10/bet',
+                                        line=dict(color='#3498db', width=1.5)))
+            fig_ph.add_trace(go.Scatter(y=kelly_cum, name='Half-Kelly (1% cap)',
+                                        line=dict(color='#9b59b6', width=2)))
+            fig_ph.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
+            fig_ph.update_layout(
+                title='Cumulative Prop P&L — Flat vs Kelly',
+                xaxis_title='Bet #', yaxis_title='Net P&L ($)',
+                height=350, margin=dict(l=40, r=20, t=40, b=40),
+                legend=dict(orientation='h', y=1.02),
+            )
+            st.plotly_chart(fig_ph, use_container_width=True)
+        except ImportError:
+            pass
+
+    # ── Parlay Ladder Simulator ───────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Parlay Ladder Simulator")
+    st.caption("Slate-by-slate simulation · top 10 daily props · 4-tier ladder · $100/slate budget")
+
+    if prop_bt.empty:
+        st.info("Run `python build_nhl_prop_backtest.py` to enable ladder simulation.")
+    else:
+        _sim_seasons = sorted(prop_bt['season'].unique(), reverse=True)
+        _sel_sim = st.multiselect(
+            "Ladder sim seasons",
+            options=_sim_seasons,
+            default=_sim_seasons,
+            format_func=lambda s: f"{s}-{s+1}",
+            key='nhl_ladder_sim_seasons',
+        )
+        _active_seasons = tuple(sorted(_sel_sim if _sel_sim else _sim_seasons))
+
+        try:
+            sim_results, cum_pnl_series, tier_stats = _nhl_ladder_sim(_active_seasons, _bt_mtime)
+        except Exception as _e:
+            st.warning(f"Ladder simulation error: {_e}")
+            sim_results, cum_pnl_series, tier_stats = [], [0.0], {}
+
+        if sim_results:
+            LADDER_BUDGET = 100.0
+            n_slates     = len(sim_results)
+            total_pnl    = sum(r['net_pnl'] for r in sim_results)
+            n_pnl_pos    = sum(1 for r in sim_results if r['net_pnl'] > 0)
+            total_staked = n_slates * LADDER_BUDGET
+
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("Slates Simulated", f"{n_slates:,}")
+            sc2.metric("Winning Slates", f"{n_pnl_pos/n_slates*100:.0f}%", f"{n_pnl_pos}")
+            sc3.metric("Total Net P&L", f"${total_pnl:+,.0f}")
+            sc4.metric("ROI", f"{total_pnl/total_staked*100:+.1f}%")
+
+            # Tier hit rates — canonical order
+            _TIER_ORDER = ['Banker', 'Accelerator 1', 'Accelerator 2', 'Moonshot']
+            ordered = [(k, tier_stats[k]) for k in _TIER_ORDER if k in tier_stats]
+            ordered += [(k, v) for k, v in tier_stats.items() if k not in _TIER_ORDER]
+            if ordered:
+                st.markdown("**Tier Hit Rates**")
+                tier_cols = st.columns(len(ordered))
+                for col, (label, stats) in zip(tier_cols, ordered):
+                    rate = stats['hit'] / max(stats['total'], 1) * 100
+                    col.metric(label, f"{rate:.0f}%", f"{stats['hit']}/{stats['total']} slates")
+
+            # Cumulative P&L chart
+            try:
+                import plotly.graph_objects as go
+                fig_ldr = go.Figure()
+                fig_ldr.add_trace(go.Scatter(
+                    y=cum_pnl_series, name='Ladder Net P&L',
+                    line=dict(color='#22c55e', width=2),
+                    fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
+                ))
+                fig_ldr.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
+                fig_ldr.update_layout(
+                    title=f'Cumulative Ladder P&L  (${LADDER_BUDGET:.0f}/slate)',
+                    xaxis_title='Slate #', yaxis_title='Cumulative Net P&L ($)',
+                    height=350, margin=dict(l=40, r=20, t=40, b=40),
+                )
+                st.plotly_chart(fig_ldr, use_container_width=True)
+            except ImportError:
+                pass
+        else:
+            st.info("Not enough slate data for ladder simulation (need ≥10 props per day).")
 
 
 # ── Track Record tab ───────────────────────────────────────────────────────────
