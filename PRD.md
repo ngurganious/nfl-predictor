@@ -743,9 +743,9 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 | "Lock" badge >75% confidence | ✅ | ✅ | ✅ | ✅ Standard |
 | Standardized Kelly cap (10%) | ✅ | ✅ | ✅ | ✅ Standard |
 | Standardized bet signal colors | ✅ | ✅ | ✅ | ✅ Standard |
-| **Prop accuracy history (backtest)** | ❌ | ❌ | ❌ | 🔲 Phase 7 #36 |
-| **Ladder simulator (backtest)** | ❌ | ❌ | ❌ | 🔲 Phase 7 #37 |
-| Year filter standardization | ❌ (hardcoded 5y) | ❌ (all seasons) | ✅ | 🔲 Phase 7 #38 |
+| **Prop accuracy history (backtest)** | ❌ | ✅ | ❌ | 🚧 Phase 7 #36 — NHL done; MLB/NFL pending build scripts |
+| **Ladder simulator (backtest)** | ❌ | ✅ | ❌ | 🚧 Phase 7 #37 — NHL done; MLB/NFL pending build scripts |
+| Year filter standardization | ❌ (hardcoded 5y) | ✅ (multi-select, default last 5) | ✅ | 🚧 Phase 7 #38 — NHL done; NFL pending |
 | Stanley Cup Predictor tab | ❌ | ❌ | N/A | 🔲 §3.2.2 |
 | NHL Vegas odds integration | ✅ | ✅ | N/A | ✅ Phase 3 #10 |
 | NHL player props | ✅ | ✅ | ✅ | ✅ All built |
@@ -758,12 +758,12 @@ Key: ✅ Done | ⚠️ Partial | ❌ Missing | 🔲 New requirement
 
 | # | Item | Effort | Dependency |
 |---|------|--------|------------|
-| 33 | `build_nhl_prop_backtest.py` — load `.nhl_prop_log_cache.json`, reconstruct cumulative season-avg features (expanding mean, min 10 games), run `model_nhl_player.pkl`, save `nhl_prop_backtest.csv` | Medium | `model_nhl_player.pkl`, `nhl_team_stats_historical.csv` |
+| 33 ✅ | `build_nhl_prop_backtest.py` — load `.nhl_prop_log_cache.json`, reconstruct cumulative season-avg features (expanding mean, min 10 games), run `model_nhl_player.pkl`, save `nhl_prop_backtest.csv` | Medium | `model_nhl_player.pkl`, `nhl_team_stats_historical.csv` |
 | 34 | `build_mlb_prop_backtest.py` — load `.mlb_prop_log_cache.json`, reconstruct pitcher/batter features, run `model_mlb_player.pkl`, save `mlb_prop_backtest.csv` | Medium | `model_mlb_player.pkl`, `mlb_team_stats_historical.csv` |
 | 35 | `build_nfl_prop_backtest.py` — nfl_data_py game logs 2016–2024, rolling 4-game features, run NFL prop models, save `nfl_prop_backtest.csv` | Medium | NFL prop model PKLs, `nfl_data_py` |
-| 36 | All sports: **Player Prop Accuracy History** section in Backtesting tab — year multi-select, per-year table + rollup row, prop type tiles, cumulative P&L chart (flat $1 vs Half-Kelly) | Medium | Items 33–35; `@st.cache_data` wrapper |
-| 37 | All sports: **Parlay Ladder Simulator** section in Backtesting tab — slate-by-slate simulation, `parlay_math.optimize_tiers()` on daily top-10 props, tier hit rates, cumulative P&L chart | High | Items 33–35; `parlay_math.py` (already built) |
-| 38 | Year filter standardization — NFL hardcoded-5y → multi-select; NHL all-seasons → multi-select with default last 5 | Low | Consistency with MLB which already has multi-select |
+| 36 🚧 | All sports: **Player Prop Accuracy History** section in Backtesting tab — year multi-select, per-year table + rollup row, prop type tiles, cumulative P&L chart (flat $10 vs Half-Kelly) | Medium | NHL done (`nhl_app.py`) · MLB/NFL pending items 34–35 |
+| 37 🚧 | All sports: **Parlay Ladder Simulator** section in Backtesting tab — slate-by-slate simulation, `parlay_math.optimize_tiers()` on daily top-10 props, tier hit rates, cumulative P&L chart | High | NHL done (`nhl_app.py`) · MLB/NFL pending items 34–35 |
+| 38 🚧 | Year filter standardization — NFL hardcoded-5y → multi-select; NHL all-seasons → multi-select with default last 5 | Low | NHL done · NFL `final_app.py` backtesting section pending |
 
 **Prop backtest CSV schemas:**
 
