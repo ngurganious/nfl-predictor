@@ -186,6 +186,74 @@ def load_nhl_prop_backtest():
         return pd.DataFrame()
 
 
+@st.cache_data
+def _nhl_ladder_sim(seasons_tuple):
+    """Run slate-by-slate ladder simulation (cached). Returns (sim_results, cum_pnl_series, tier_stats)."""
+    import parlay_math as _pm
+
+    prop_bt = load_nhl_prop_backtest()
+    if prop_bt.empty:
+        return [], [0.0], {}
+
+    sbt = prop_bt[prop_bt['season'].isin(seasons_tuple)]
+    BUDGET = 100.0
+    # Canonical tier order for display (matches 4-tier ladder from ≥10 legs at -110)
+    _TIER_ORDER = ['Banker', 'Accelerator 1', 'Accelerator 2', 'Moonshot']
+
+    sim_results    = []
+    cum_pnl        = 0.0
+    cum_pnl_series = [0.0]
+    tier_stats     = {}  # subtitle → {hit, total}
+
+    for dt in sorted(sbt['game_date'].dt.date.unique()):
+        day = sbt[sbt['game_date'].dt.date == dt]
+        if len(day) < 10:   # need ≥10 props → consistent 4-tier structure
+            continue
+
+        top10 = day.nlargest(10, 'predicted_prob')
+        legs  = [
+            {
+                'odds':       -110,
+                'confidence': float(r['predicted_prob']),
+                'hit':        bool(r['hit']),
+                'label':      f"{r['name']} {r['prop_type'].title()}",
+            }
+            for _, r in top10.iterrows()
+        ]
+
+        tiers = _pm.optimize_tiers(legs, BUDGET)
+        sized = _pm.compute_stakes(tiers, BUDGET)
+        if not sized:
+            continue
+
+        total_staked   = sum(t['stake'] for t in sized)
+        total_returned = 0.0
+        n_tiers_hit    = 0
+
+        for i, tier in enumerate(sized):
+            all_hit = all(leg.get('hit', False) for leg in tier['legs'])
+            label   = tier.get('subtitle', _TIER_ORDER[i] if i < len(_TIER_ORDER) else f'Tier {i+1}')
+            if label not in tier_stats:
+                tier_stats[label] = {'hit': 0, 'total': 0}
+            tier_stats[label]['total'] += 1
+            if all_hit:
+                total_returned += tier['payout']
+                tier_stats[label]['hit'] += 1
+                n_tiers_hit += 1
+
+        net_pnl = total_returned - total_staked
+        cum_pnl += net_pnl
+        cum_pnl_series.append(cum_pnl)
+        sim_results.append({
+            'date':       str(dt),
+            'net_pnl':    net_pnl,
+            'tiers_hit':  n_tiers_hit,
+            'total_tiers': len(sized),
+        })
+
+    return sim_results, cum_pnl_series, tier_stats
+
+
 # ── ELO helpers ───────────────────────────────────────────────────────────────
 
 def get_nhl_elo(team: str, elo_ratings: dict) -> float:
@@ -1608,100 +1676,70 @@ def _render_tab2(model, features, accuracy):
         if prop_bt.empty:
             st.info("Run `python build_nhl_prop_backtest.py` to enable ladder simulation.")
         else:
+            _sim_seasons = sorted(prop_bt['season'].unique(), reverse=True)
+            _sel_sim = st.multiselect(
+                "Ladder sim seasons",
+                options=_sim_seasons,
+                default=_sim_seasons,
+                format_func=lambda s: f"{s}-{s+1}",
+                key='nhl_ladder_sim_seasons',
+            )
+            _active_seasons = tuple(sorted(_sel_sim if _sel_sim else _sim_seasons))
+
             try:
-                import parlay_math as _pm
+                sim_results, cum_pnl_series, tier_stats = _nhl_ladder_sim(_active_seasons)
+            except Exception as _e:
+                st.warning(f"Ladder simulation error: {_e}")
+                sim_results = []
 
-                _sim_seasons = sorted(prop_bt['season'].unique(), reverse=True)
-                _sel_sim = st.multiselect(
-                    "Ladder sim seasons",
-                    options=_sim_seasons,
-                    default=_sim_seasons,
-                    format_func=lambda s: f"{s}-{s+1}",
-                    key='nhl_ladder_sim_seasons',
-                )
-                _sbt = prop_bt[prop_bt['season'].isin(_sel_sim if _sel_sim else _sim_seasons)]
-
+            if sim_results:
                 LADDER_BUDGET = 100.0
-                slate_dates   = sorted(_sbt['game_date'].dt.date.unique())
-                sim_results   = []
-                cum_pnl       = 0.0
-                cum_pnl_series = [0.0]
-                tier_hits     = {}  # tier subtitle → {hit, total}
+                n_slates     = len(sim_results)
+                total_pnl    = sum(r['net_pnl'] for r in sim_results)
+                n_pnl_pos    = sum(1 for r in sim_results if r['net_pnl'] > 0)
+                total_staked = n_slates * LADDER_BUDGET
 
-                for dt in slate_dates:
-                    day = _sbt[_sbt['game_date'].dt.date == dt].copy()
-                    if len(day) < 3:
-                        continue
-                    top10 = day.nlargest(10, 'predicted_prob')
-                    legs  = [
-                        {
-                            'odds':       -110,
-                            'confidence': float(r['predicted_prob']),
-                            'hit':        bool(r['hit']),
-                            'label':      f"{r['name']} {r['prop_type'].title()}",
-                        }
-                        for _, r in top10.iterrows()
-                    ]
-                    res = _pm.simulate_ladder_week(legs, LADDER_BUDGET)
-                    if res is None:
-                        continue
-                    cum_pnl += res['net_pnl']
-                    cum_pnl_series.append(cum_pnl)
-                    sim_results.append({'date': dt, 'net_pnl': res['net_pnl'],
-                                        'tiers_hit': res['tiers_hit'],
-                                        'total_tiers': res['total_tiers']})
-                    # Collect tier hit stats
-                    tiers = _pm.optimize_tiers(legs, LADDER_BUDGET)
-                    for i, t in enumerate(tiers):
-                        sub_key = t.get('subtitle', f"Tier {i+1}")
-                        if sub_key not in tier_hits:
-                            tier_hits[sub_key] = {'hit': 0, 'total': 0}
-                        tier_hits[sub_key]['total'] += 1
-                        if res['tier_hits'][i] if i < len(res['tier_hits']) else False:
-                            tier_hits[sub_key]['hit'] += 1
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("Slates Simulated", f"{n_slates:,}")
+                sc2.metric("Winning Slates", f"{n_pnl_pos/n_slates*100:.0f}%", f"{n_pnl_pos}")
+                sc3.metric("Total Net P&L", f"${total_pnl:+,.0f}")
+                sc4.metric("ROI", f"{total_pnl/total_staked*100:+.1f}%")
 
-                if sim_results:
-                    n_slates  = len(sim_results)
-                    n_pnl_pos = sum(1 for r in sim_results if r['net_pnl'] > 0)
-                    total_pnl = sum(r['net_pnl'] for r in sim_results)
-                    total_staked = n_slates * LADDER_BUDGET
-
-                    sc1, sc2, sc3, sc4 = st.columns(4)
-                    sc1.metric("Slates Simulated", f"{n_slates:,}")
-                    sc2.metric("Winning Slates", f"{n_pnl_pos/n_slates*100:.0f}%", f"{n_pnl_pos}")
-                    sc3.metric("Total Net P&L", f"${total_pnl:+,.0f}")
-                    sc4.metric("ROI", f"{total_pnl/total_staked*100:+.1f}%")
-
-                    # Tier hit rates
-                    if tier_hits:
-                        tier_cols = st.columns(len(tier_hits))
-                        for col, (subtitle, stats) in zip(tier_cols, tier_hits.items()):
-                            rate = stats['hit'] / max(stats['total'], 1) * 100
-                            col.metric(f"{subtitle} Hit Rate",
-                                       f"{rate:.0f}%", f"{stats['hit']}/{stats['total']}")
-
-                    # Cumulative P&L chart
-                    try:
-                        import plotly.graph_objects as go
-                        fig_ldr = go.Figure()
-                        fig_ldr.add_trace(go.Scatter(
-                            y=cum_pnl_series, name='Ladder Net P&L',
-                            line=dict(color='#22c55e', width=2),
-                            fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
-                        ))
-                        fig_ldr.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
-                        fig_ldr.update_layout(
-                            title=f'Cumulative Ladder P&L  (${LADDER_BUDGET:.0f}/slate)',
-                            xaxis_title='Slate #', yaxis_title='Cumulative Net P&L ($)',
-                            height=350, margin=dict(l=40, r=20, t=40, b=40),
+                # Tier hit rates — canonical order
+                if tier_stats:
+                    _TIER_ORDER = ['Banker', 'Accelerator 1', 'Accelerator 2', 'Moonshot']
+                    ordered = [(k, tier_stats[k]) for k in _TIER_ORDER if k in tier_stats]
+                    ordered += [(k, v) for k, v in tier_stats.items() if k not in _TIER_ORDER]
+                    st.markdown("**Tier Hit Rates**")
+                    tier_cols = st.columns(len(ordered))
+                    for col, (label, stats) in zip(tier_cols, ordered):
+                        rate = stats['hit'] / max(stats['total'], 1) * 100
+                        col.metric(
+                            f"{label}",
+                            f"{rate:.0f}%",
+                            f"{stats['hit']}/{stats['total']} slates",
                         )
-                        st.plotly_chart(fig_ldr, use_container_width=True)
-                    except ImportError:
-                        pass
-                else:
-                    st.info("Not enough slate data for ladder simulation.")
-            except ImportError:
-                st.warning("parlay_math.py not found — ladder simulation unavailable.")
+
+                # Cumulative P&L chart
+                try:
+                    import plotly.graph_objects as go
+                    fig_ldr = go.Figure()
+                    fig_ldr.add_trace(go.Scatter(
+                        y=cum_pnl_series, name='Ladder Net P&L',
+                        line=dict(color='#22c55e', width=2),
+                        fill='tozeroy', fillcolor='rgba(34,197,94,0.08)',
+                    ))
+                    fig_ldr.add_hline(y=0, line_dash='dash', line_color='gray', opacity=0.5)
+                    fig_ldr.update_layout(
+                        title=f'Cumulative Ladder P&L  (${LADDER_BUDGET:.0f}/slate)',
+                        xaxis_title='Slate #', yaxis_title='Cumulative Net P&L ($)',
+                        height=350, margin=dict(l=40, r=20, t=40, b=40),
+                    )
+                    st.plotly_chart(fig_ldr, use_container_width=True)
+                except ImportError:
+                    pass
+            else:
+                st.info("Not enough slate data for ladder simulation (need ≥10 props per day).")
 
     else:
         st.warning("Feature engineering failed. Check that nhl_games_processed.csv exists.")
