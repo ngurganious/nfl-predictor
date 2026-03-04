@@ -176,8 +176,15 @@ def load_nhl_historical_features():
         return games, []
 
 
+def _prop_bt_mtime():
+    try:
+        return os.path.getmtime('nhl_prop_backtest.csv')
+    except OSError:
+        return 0.0
+
+
 @st.cache_data
-def load_nhl_prop_backtest():
+def load_nhl_prop_backtest(_mtime=0.0):
     try:
         df = pd.read_csv('nhl_prop_backtest.csv')
         df['game_date'] = pd.to_datetime(df['game_date'])
@@ -187,11 +194,11 @@ def load_nhl_prop_backtest():
 
 
 @st.cache_data
-def _nhl_ladder_sim(seasons_tuple):
+def _nhl_ladder_sim(seasons_tuple, _mtime=0.0):
     """Run slate-by-slate ladder simulation (cached). Returns (sim_results, cum_pnl_series, tier_stats)."""
     import parlay_math as _pm
 
-    prop_bt = load_nhl_prop_backtest()
+    prop_bt = load_nhl_prop_backtest(_mtime)
     if prop_bt.empty:
         return [], [0.0], {}
 
@@ -252,6 +259,43 @@ def _nhl_ladder_sim(seasons_tuple):
         })
 
     return sim_results, cum_pnl_series, tier_stats
+
+
+@st.cache_data
+def _nhl_prop_pnl_series(seasons_tuple, _mtime=0.0):
+    """Vectorized flat vs Kelly P&L series for the prop history chart (cached)."""
+    prop_bt = load_nhl_prop_backtest(_mtime)
+    if prop_bt.empty:
+        return [0.0], [0.0]
+
+    sbt = prop_bt[prop_bt['season'].isin(seasons_tuple)].sort_values(
+        ['game_date', 'player_id', 'prop_type']
+    ).reset_index(drop=True)
+
+    b = 100.0 / 110.0
+    hit = sbt['hit'].values.astype(float)
+    prob = sbt['predicted_prob'].values
+
+    # Flat $10/bet
+    flat_pnl_per = np.where(hit, 10.0 * b, -10.0)
+    flat_cum = np.concatenate([[0.0], np.cumsum(flat_pnl_per)]).tolist()
+
+    # Half-Kelly with 1% bankroll cap, starting at $1,000
+    kelly_cum_arr = np.empty(len(sbt) + 1)
+    kelly_cum_arr[0] = 0.0
+    bk = 1000.0
+    running = 0.0
+    for i in range(len(sbt)):
+        p = prob[i]
+        fstar = max(0.0, (b * p - (1 - p)) / b) * 0.5
+        stake = min(bk * fstar, bk * 0.01)
+        pnl = stake * b if hit[i] else -stake
+        bk = max(bk + pnl, 0.01)
+        running += pnl
+        kelly_cum_arr[i + 1] = running
+    kelly_cum = kelly_cum_arr.tolist()
+
+    return flat_cum, kelly_cum
 
 
 # ── ELO helpers ───────────────────────────────────────────────────────────────
@@ -1579,7 +1623,8 @@ def _render_tab2(model, features, accuracy):
         st.subheader("Player Prop Accuracy History")
         st.caption("2020-2025 · 5 seasons · expanding-mean features (no future leakage)")
 
-        prop_bt = load_nhl_prop_backtest()
+        _bt_mtime = _prop_bt_mtime()
+        prop_bt = load_nhl_prop_backtest(_bt_mtime)
 
         if prop_bt.empty:
             st.info("Run `python build_nhl_prop_backtest.py` to generate prop backtest data.")
@@ -1635,22 +1680,8 @@ def _render_tab2(model, features, accuracy):
             # Cumulative Flat vs Kelly P&L chart
             try:
                 import plotly.graph_objects as go
-                sorted_bets = fbt.sort_values(['game_date', 'player_id', 'prop_type'])
-                flat_cum  = [0.0]
-                kelly_bk  = 1000.0
-                kelly_cum = [0.0]
-                b_odds    = 100.0 / 110.0
-                kelly_cap = kelly_bk * 0.01  # 1% cap
-
-                for _, r in sorted_bets.iterrows():
-                    won = bool(r['hit'])
-                    flat_cum.append(flat_cum[-1] + (10.0 * b_odds if won else -10.0))
-                    p     = float(r['predicted_prob'])
-                    fstar = max(0.0, (b_odds * p - (1 - p)) / b_odds) * 0.5
-                    stake = min(kelly_bk * fstar, kelly_cap)
-                    pnl   = (stake * b_odds if won else -stake)
-                    kelly_bk  = max(kelly_bk + pnl, 0.01)
-                    kelly_cum.append(kelly_cum[-1] + pnl)
+                _pnl_seasons = tuple(sorted(sel_bt if sel_bt else seasons_avail))
+                flat_cum, kelly_cum = _nhl_prop_pnl_series(_pnl_seasons, _bt_mtime)
 
                 fig_ph = go.Figure()
                 fig_ph.add_trace(go.Scatter(y=flat_cum,  name='Flat $10/bet',
@@ -1687,7 +1718,7 @@ def _render_tab2(model, features, accuracy):
             _active_seasons = tuple(sorted(_sel_sim if _sel_sim else _sim_seasons))
 
             try:
-                sim_results, cum_pnl_series, tier_stats = _nhl_ladder_sim(_active_seasons)
+                sim_results, cum_pnl_series, tier_stats = _nhl_ladder_sim(_active_seasons, _bt_mtime)
             except Exception as _e:
                 st.warning(f"Ladder simulation error: {_e}")
                 sim_results = []
