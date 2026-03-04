@@ -186,7 +186,10 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 
 **Tabs:**
 1. **Game Predictor** — Weekly schedule (NHL API) or manual entry, goalie quality differential, O/U prediction (goals), Kelly sizing, team depth chart (fwd/def/goalie slots)
-2. **Backtesting** — 5-season history, flat + Kelly simulation, Plotly P&L charts
+2. **Backtesting** — 5-season history, flat + Kelly simulation, Plotly P&L charts, Player Prop Accuracy History, Parlay Ladder Simulator
+3. **Player Props** — Goals / assists / shots predictions · **today & tomorrow only** (NHL betting lines only open 24–48 h out); top-10 auto-selected for Parlay Ladder
+4. **Parlay Ladder** — Legs sourced from Player Props (today+tomorrow window); `parlay_math.optimize_tiers()` 4-tier structure
+5. **Track Record** — Auto-logged predictions, bet tracker, export/import
 
 **Unique to NHL:**
 - Outdoor game detection (Winter Classic, Stadium Series)
@@ -195,6 +198,7 @@ Vegas implied: XX.X%. Half-Kelly caps at 20% of bankroll to limit volatility.
 - Day-keyed schedule ("Mon Mar 01") to prevent cross-week duplicates
 - 29-feature stacking ensemble (58% holdout accuracy)
 - NHL API integration (`apis/nhl.py`, api-web.nhle.com/v1)
+- **Player Props / Parlay game window: today + tomorrow only** — full weekly schedule still loaded for Game Predictor; props tab filters in-memory before pre-calc
 
 ### 2.3 MLB — Planned Features
 

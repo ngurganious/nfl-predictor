@@ -15,7 +15,7 @@ import os
 import pickle
 import logging
 import warnings
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -184,7 +184,7 @@ def _prop_bt_mtime():
 
 
 @st.cache_data
-def load_nhl_prop_backtest(_mtime=0.0):
+def load_nhl_prop_backtest(mtime=0.0):
     try:
         df = pd.read_csv('nhl_prop_backtest.csv')
         df['game_date'] = pd.to_datetime(df['game_date'])
@@ -194,11 +194,11 @@ def load_nhl_prop_backtest(_mtime=0.0):
 
 
 @st.cache_data
-def _nhl_ladder_sim(seasons_tuple, _mtime=0.0):
+def _nhl_ladder_sim(seasons_tuple, mtime=0.0):
     """Run slate-by-slate ladder simulation (cached). Returns (sim_results, cum_pnl_series, tier_stats)."""
     import parlay_math as _pm
 
-    prop_bt = load_nhl_prop_backtest(_mtime)
+    prop_bt = load_nhl_prop_backtest(mtime)
     if prop_bt.empty:
         return [], [0.0], {}
 
@@ -262,9 +262,9 @@ def _nhl_ladder_sim(seasons_tuple, _mtime=0.0):
 
 
 @st.cache_data
-def _nhl_prop_pnl_series(seasons_tuple, _mtime=0.0):
+def _nhl_prop_pnl_series(seasons_tuple, mtime=0.0):
     """Vectorized flat vs Kelly P&L series for the prop history chart (cached)."""
-    prop_bt = load_nhl_prop_backtest(_mtime)
+    prop_bt = load_nhl_prop_backtest(mtime)
     if prop_bt.empty:
         return [0.0], [0.0]
 
@@ -1536,7 +1536,7 @@ def _render_tab2(model, features, accuracy):
             fig.add_trace(go.Scatter(y=home_pnls,   name='Always Home', line=dict(color='#3498db', width=1.5, dash='dot')))
             fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
             fig.update_layout(
-                title=f"Cumulative P&L: {min_bt_season}-{max_season} Seasons",
+                title=f"Cumulative P&L: {all_seasons[-1]}-{max_season} Seasons",
                 xaxis_title="Game",
                 yaxis_title="Net P&L ($)",
                 height=350, margin=dict(l=40, r=20, t=40, b=40),
@@ -2264,13 +2264,32 @@ def _render_tab_props(player_models, skater_stats, team_stats):
         )
         return
 
+    # Filter to today + tomorrow only — NHL betting lines only open 24-48 h out
+    try:
+        import pytz as _pytz
+        _et = _pytz.timezone('America/New_York')
+        _today_et = datetime.now(_et).date()
+    except Exception:
+        _today_et = date.today()
+    _ok_dates = {_today_et, _today_et + timedelta(days=1)}
+    schedule = {
+        day: [g for g in games
+              if g.get('datetime_et') is not None
+              and g['datetime_et'].date() in _ok_dates]
+        for day, games in schedule.items()
+    }
+    schedule = {day: games for day, games in schedule.items() if games}
+    if not schedule:
+        st.info("📅 No NHL games today or tomorrow. Check back when lines open for upcoming games.")
+        return
+
     sels = st.session_state.get('nhl_rpl_selections', {})
     n_sels = len(sels)
 
     hdr_col, ctr_col = st.columns([4, 2])
     with hdr_col:
         st.subheader("🎯 NHL Player Props")
-        st.caption("Model-predicted goals · assists · shots on goal  ·  Select legs to build a Parlay Ladder")
+        st.caption("Model-predicted goals · assists · shots on goal  ·  Today & tomorrow's games only  ·  Select legs to build a Parlay Ladder")
     with ctr_col:
         if n_sels > 0:
             badge_color = '#22c55e' if n_sels >= 3 else '#eab308'
@@ -2290,6 +2309,12 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     st.divider()
 
     # Pre-compute prop predictions (cached per session)
+    # Reset if the filtered game set changed (e.g. day boundary crossed)
+    _n_prop_games = sum(len(g) for g in schedule.values())
+    if st.session_state.get('_nhl_props_game_count') != _n_prop_games:
+        st.session_state['nhl_props_precalc_done'] = False
+        st.session_state['nhl_props_autosel_done'] = False
+        st.session_state['_nhl_props_game_count'] = _n_prop_games
     if not st.session_state.get('nhl_props_precalc_done'):
         all_games = [g for games in schedule.values() for g in games]
         with st.spinner("Computing player prop predictions…"):
