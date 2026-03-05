@@ -161,6 +161,10 @@ def load_nhl_skater_stats():
         return pd.DataFrame()
 
 
+@st.cache_resource
+def _get_nhl_client():
+    return NHLClient()
+
 @st.cache_data
 def load_nhl_historical_features():
     """Load and engineer features for backtesting (cached)."""
@@ -1173,18 +1177,33 @@ def _render_nhl_weekly_schedule(
                 del st.session_state[k]
         st.rerun()
 
-    # Create a single NHLClient instance for all depth chart lookups
-    client_key = 'nhl_client_instance'
-    if client_key not in st.session_state:
-        st.session_state[client_key] = NHLClient()
-    nhl_client = st.session_state[client_key]
+    # Cached NHLClient singleton
+    nhl_client = _get_nhl_client()
 
     schedule_key = 'nhl_weekly_schedule'
-    if schedule_key not in st.session_state:
+
+    btn_col, _, _ = st.columns([2, 6, 2])
+    with btn_col:
+        load_btn = st.button("Load / Refresh Schedule", type="secondary",
+                             use_container_width=True, key="nhl_load_sched_btn")
+
+    if load_btn:
         with st.spinner("Fetching this week's NHL schedule..."):
             st.session_state[schedule_key] = fetch_nhl_weekly_schedule(nhl_client)
+            # Clear stale prediction/odds state on refresh
+            for k in list(st.session_state.keys()):
+                if k in ('nhl_odds_by_game', 'nhl_precalc_done'):
+                    del st.session_state[k]
+                elif k.startswith('nhl_g') and ('_pred' in k or '_ml_home' in k or '_ou_total' in k):
+                    del st.session_state[k]
+            st.rerun()
 
-    schedule = st.session_state.get(schedule_key, {})
+    schedule = st.session_state.get(schedule_key)
+
+    if schedule is None:
+        st.info("Click **Load / Refresh Schedule** to fetch this week's NHL games, "
+                "or use Manual Entry below.")
+        return
 
     if not schedule:
         st.info("No NHL games found for this week. Try refreshing or use Manual Entry.")
@@ -1340,17 +1359,8 @@ python build_nhl_model.py          # ~10 min (trains ensemble)
             full_goalie_ratings=full_goalie_ratings,
         )
     else:
-        # Create NHLClient for manual entry depth chart lookups
-        nhl_client_m = None
-        if _LINEUP_MODULES_OK:
-            try:
-                from apis.nhl import NHLClient
-                client_key = 'nhl_client_instance'
-                if client_key not in st.session_state:
-                    st.session_state[client_key] = NHLClient()
-                nhl_client_m = st.session_state[client_key]
-            except Exception:
-                pass
+        # Cached NHLClient for manual entry depth chart lookups
+        nhl_client_m = _get_nhl_client() if _LINEUP_MODULES_OK else None
         _render_nhl_manual_entry(
             model, features, elo_ratings, goalie_ratings,
             team_stats, total_model_pkg, nhl_games,

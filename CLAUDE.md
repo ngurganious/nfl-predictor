@@ -2,11 +2,21 @@
 
 > **This file is for Claude.** It covers how to work in this codebase.
 > For what EdgeIQ is and its product standards, see `EdgeIQ.md`.
-> For what to build next, see `PRD.md`.
-> For current build progress, see `ROADMAP.md`.
+> For what to build next, see `.planning/ROADMAP.md` (GSD phases).
+> For project context and decisions, see `.planning/PROJECT.md`.
 
-## Workflow Requirements- update CLAUDE.md before every git commit
-- always ask claritying questions in planning mode
+## Workflow: Get Shit Done (GSD)
+This project uses the **GSD framework** for structured development:
+- **Discuss** → **Plan** → **Execute** → **Verify** cycle for each phase
+- All planning artifacts live in `.planning/` (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md)
+- Use `/gsd:progress` to check where we are and what's next
+- Use `/gsd:plan-phase N` to plan, `/gsd:execute-phase N` to build, `/gsd:verify-work N` to validate
+- Update `.planning/STATE.md` after completing any phase
+- Update `.planning/ROADMAP.md` status after completing any phase item
+
+## Workflow Requirements
+- Update CLAUDE.md before every git commit
+- Always ask clarifying questions in planning mode
 - For any architectural decision or model change, use extended thinking before proposing a solution
 
 ## Role
@@ -28,6 +38,11 @@ EdgeIQ is a multi-sport ML prediction platform (NFL + NHL + MLB). Entry point is
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | This file — developer instructions for Claude |
+| `.planning/PROJECT.md` | GSD project context — vision, decisions, constraints |
+| `.planning/REQUIREMENTS.md` | Scoped requirements with REQ-IDs |
+| `.planning/ROADMAP.md` | GSD phase structure + status tracking |
+| `.planning/STATE.md` | Current position, decisions, blockers |
+| `.planning/research/` | Domain research (architecture, design, testing, abstractions) |
 | `EdgeIQ.md` | Product definition, brand, and cross-sport standards |
 | `PRD.md` | Requirements, gap analysis, full build detail |
 | `ROADMAP.md` | Active build tracker — update after every completed item |

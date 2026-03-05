@@ -403,48 +403,6 @@ def simulate_ladder_backtest():
     }
     return week_results, summary
 
-game_model, elo_ratings, pass_model, rush_model, rec_model, player_lookup, \
-    enhanced_features, enhanced_acc, pass_feat, rush_feat, rec_feat = load_all()
-games, passing, rushing, receiving, lineup_df = load_data()
-pipeline        = load_pipeline()
-team_roll_stats   = load_team_rolling_stats()
-team_stats_curr   = load_team_stats_current()
-total_model_pkg   = load_total_model()
-qb_ratings      = load_qb_ratings()
-def_pass_stats, def_rush_stats = load_def_stats()
-
-# ── Helpers (defined after load so elo_ratings exists) ────────────
-def get_elo(team):
-    return elo_ratings.get(team, 1500)
-
-def elo_win_prob(elo_a, elo_b):
-    return 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
-
-def get_starters(team):
-    result = {}
-    for pos in ['QB','RB','WR','TE']:
-        players = player_lookup.get(team, {}).get(pos, [])
-        result[pos]            = players[0]['name']  if players else 'Unknown'
-        result[f'{pos}_list']  = [p['name'] for p in players] if players else ['Unknown']
-        result[f'{pos}_score'] = players[0]['score'] if players else 50.0
-    return result
-
-def calc_lineup_score(team, qb, rb, wr, te):
-    def find_score(pos, name):
-        for p in player_lookup.get(team, {}).get(pos, []):
-            if p['name'] == name:
-                return p['score']
-        return 50.0
-    qb_s = find_score('QB', qb)
-    rb_s = find_score('RB', rb)
-    wr_s = find_score('WR', wr)
-    te_s = find_score('TE', te)
-    score = qb_s*0.40 + wr_s*0.25 + rb_s*0.20 + te_s*0.15
-    return score, qb_s, rb_s, wr_s, te_s
-
-def lineup_adjustment(home_score, away_score):
-    return (home_score - away_score) * 0.005
-
 def get_player_recent(df, name_col, name, stat_cols, n=4):
     rows = df[df[name_col] == name].sort_values(['season','week']).tail(n)
     if len(rows) == 0:
@@ -457,6 +415,49 @@ def get_player_recent(df, name_col, name, stat_cols, n=4):
     return result
 
 def render_nfl_app():
+    # ── Load all models + data (cached — only runs once) ─────────
+    game_model, elo_ratings, pass_model, rush_model, rec_model, player_lookup, \
+        enhanced_features, enhanced_acc, pass_feat, rush_feat, rec_feat = load_all()
+    games, passing, rushing, receiving, lineup_df = load_data()
+    pipeline        = load_pipeline()
+    team_roll_stats   = load_team_rolling_stats()
+    team_stats_curr   = load_team_stats_current()
+    total_model_pkg   = load_total_model()
+    qb_ratings      = load_qb_ratings()
+    def_pass_stats, def_rush_stats = load_def_stats()
+
+    # ── Helpers ──────────────────────────────────────────────────
+    def get_elo(team):
+        return elo_ratings.get(team, 1500)
+
+    def elo_win_prob(elo_a, elo_b):
+        return 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
+
+    def get_starters(team):
+        result = {}
+        for pos in ['QB','RB','WR','TE']:
+            players = player_lookup.get(team, {}).get(pos, [])
+            result[pos]            = players[0]['name']  if players else 'Unknown'
+            result[f'{pos}_list']  = [p['name'] for p in players] if players else ['Unknown']
+            result[f'{pos}_score'] = players[0]['score'] if players else 50.0
+        return result
+
+    def calc_lineup_score(team, qb, rb, wr, te):
+        def find_score(pos, name):
+            for p in player_lookup.get(team, {}).get(pos, []):
+                if p['name'] == name:
+                    return p['score']
+            return 50.0
+        qb_s = find_score('QB', qb)
+        rb_s = find_score('RB', rb)
+        wr_s = find_score('WR', wr)
+        te_s = find_score('TE', te)
+        score = qb_s*0.40 + wr_s*0.25 + rb_s*0.20 + te_s*0.15
+        return score, qb_s, rb_s, wr_s, te_s
+
+    def lineup_adjustment(home_score, away_score):
+        return (home_score - away_score) * 0.005
+
     # ── Back to Home ──────────────────────────────────
     _back_col, _title_col = st.columns([1, 8])
     with _back_col:

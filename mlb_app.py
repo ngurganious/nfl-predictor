@@ -179,6 +179,14 @@ def load_mlb_batter_stats():
         return pd.DataFrame()
 
 
+@st.cache_resource
+def _get_mlb_client():
+    try:
+        from apis.mlb import MLBClient
+        return MLBClient()
+    except Exception:
+        return None
+
 @st.cache_data
 def load_mlb_historical_features():
     from mlb_feature_engineering import build_mlb_enhanced_features, MLB_ENHANCED_FEATURES
@@ -1714,13 +1722,8 @@ def render_mlb_app():
         st.error("MLB model not found. Run `python build_mlb_model.py` first.")
         return
 
-    # MLB client for live schedule
-    mlb_client = None
-    try:
-        from apis.mlb import MLBClient
-        mlb_client = MLBClient()
-    except Exception:
-        pass
+    # MLB client for live schedule (cached singleton)
+    mlb_client = _get_mlb_client()
 
     # Today's sidebar summary
     with st.sidebar:

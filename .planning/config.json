@@ -1,0 +1,20 @@
+{
+  "mode": "interactive",
+  "depth": "standard",
+  "model_profile": "quality",
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true,
+    "auto_advance": false
+  },
+  "parallelization": {
+    "enabled": true
+  },
+  "planning": {
+    "commit_docs": true
+  },
+  "git": {
+    "branching_strategy": "none"
+  }
+}

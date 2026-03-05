@@ -29,15 +29,16 @@ except Exception:
     pass
 
 # ── CSS Loader ────────────────────────────────────────────────────────────────
-def load_css():
-    # Check both locations: assets/style.css (preferred) or style.css (root)
+@st.cache_data
+def _read_css():
     search_paths = [Path(__file__).parent / "assets" / "style.css", Path(__file__).parent / "style.css"]
     for css_file in search_paths:
         if css_file.exists():
             with open(css_file) as f:
-                st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-            return
-load_css()
+                return f.read()
+    return ""
+
+st.markdown(f"<style>{_read_css()}</style>", unsafe_allow_html=True)
 
 # ── Session state init ────────────────────────────────────────────────────────
 if 'sport' not in st.session_state:
