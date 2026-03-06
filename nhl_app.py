@@ -2354,6 +2354,31 @@ def _render_tab_props(player_models, skater_stats, team_stats):
         st.info("📅 No NHL games today or tomorrow. Check back when lines open for upcoming games.")
         return
 
+    # ── Sportsbook selector + quota header ──────────────────────────────
+    from apis.odds import SPORTSBOOK_OPTIONS
+    sb_col, quota_col = st.columns([2, 3])
+    with sb_col:
+        _sb_labels = list(SPORTSBOOK_OPTIONS.keys())
+        _sb_idx = _sb_labels.index(st.session_state.get('edgeiq_sportsbook', 'DraftKings')) if st.session_state.get('edgeiq_sportsbook', 'DraftKings') in _sb_labels else 0
+        selected_book_label = st.selectbox(
+            "Your Sportsbook", _sb_labels, index=_sb_idx,
+            key="edgeiq_sportsbook",
+            help="Prop lines fetched from this book. Edge calculations use their prices.",
+        )
+    with quota_col:
+        _q_used = st.session_state.get('odds_quota_used')
+        _q_rem = st.session_state.get('odds_quota_remaining')
+        if _q_used is not None and _q_rem is not None:
+            _q_total = _q_used + _q_rem
+            _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
+            st.markdown(
+                f"<div style='margin-top:28px;font-size:0.85rem;color:{_q_color}'>"
+                f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("")  # spacer
+
     sels = st.session_state.get('nhl_rpl_selections', {})
     n_sels = len(sels)
 

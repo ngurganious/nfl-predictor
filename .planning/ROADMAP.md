@@ -165,6 +165,68 @@
 
 ---
 
+## Milestone 2: Player Props Overhaul
+
+### Phase 7: Props API + Edge Engine
+> Extend Odds API client for all 3 sports. Standardize edge calculation. Add sportsbook selector + quota display.
+
+**Requirements:** PROPS-01 to PROPS-10
+
+**Acceptance Criteria:**
+- `apis/odds.py` supports MLB sport key, events, game odds, and player props
+- `get_player_props()` accepts sport_key + bookmakers parameter for all 3 sports
+- `get_alternate_props()` method for on-demand alternate line scanning
+- Standardized `_calc_prop_edge()` function replaces 3 ad-hoc confidence calculations
+- Sportsbook dropdown (DraftKings, FanDuel, BetMGM, Caesars, PointsBet, Bovada) persists in session state
+- Quota header displays "API Credits: X / Y used" after every API call
+- Season gating disables prop fetch for sports with no scheduled games
+
+**Status:** 🔲 Not Started
+
+**Depends on:** None (can start immediately)
+
+---
+
+### Phase 8: Props Tab Redesign
+> Rewrite all 3 sport Props tabs to fetch real sportsbook lines, match against model predictions, show edge table, and feed real odds to parlay ladder.
+
+**Requirements:** PROPS-11 to PROPS-19
+
+**Acceptance Criteria:**
+- Each sport's Props tab: sportsbook selector → "Fetch Prop Lines" button → edge table
+- Edge table columns: Player | Prop | Line | Pred | Edge% | Odds | Value | Signal
+- Top Picks ranked by value_score (edge × model_prob), not raw confidence
+- "Scan Alternates" button per game for on-demand alternate line scanning
+- "Model Only — No Live Line" indicator where sportsbook data is missing
+- Signal badges (STRONG/LEAN/SMALL/PASS) based on edge_pct
+- Parlay legs carry real sportsbook odds and book name
+- NFL, NHL, MLB all use identical edge calculation + display patterns
+
+**Status:** 🔲 Not Started
+
+**Depends on:** Phase 7
+
+---
+
+### Phase 9: Model Enhancement
+> Add matchup-specific features to prop models across all sports, retrain, validate improvement.
+
+**Requirements:** MODEL-01 to MODEL-07
+
+**Acceptance Criteria:**
+- MLB batter models include opposing SP quality features → hits MAE < 0.68, TB MAE < 1.40
+- MLB park factors built and integrated into prop + game models
+- NHL prop models include opposing goalie quality features → goals MAE < 0.41
+- NHL prop models include `is_outdoor` venue feature
+- All modified models retrained with validated MAE improvement over baseline
+- Old .pkl files kept as backup until validated
+
+**Status:** 🔲 Not Started
+
+**Depends on:** Phase 8
+
+---
+
 ## Phase Summary
 
 | Phase | Name | Requirements | Effort | Risk | Status |
@@ -178,3 +240,6 @@
 | 4 | Design System | UI-01 to UI-05 | Medium | Low | 🔲 |
 | 5 | UI Components | UI-06 to UI-10 | Medium | Low | 🔲 |
 | 6 | Test Suite | TEST-01 to TEST-10 | Medium | Low | 🔲 |
+| 7 | Props API + Edge Engine | PROPS-01 to PROPS-10 | Medium | Low | 🔲 |
+| 8 | Props Tab Redesign | PROPS-11 to PROPS-19 | High | Medium | 🔲 |
+| 9 | Model Enhancement | MODEL-01 to MODEL-07 | High | Medium | 🔲 |

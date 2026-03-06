@@ -127,6 +127,51 @@ NHL_ABV_TO_NAME = {v: k for k, v in NHL_NAME_TO_ABV.items()}
 
 NHL_SPORT_KEY = "icehockey_nhl"
 
+# ── MLB team name → abbreviation mapping ─────────────────────────────────────
+MLB_SPORT_KEY = "baseball_mlb"
+
+MLB_NAME_TO_ABV = {
+    "Arizona Diamondbacks":    "ARI",
+    "Atlanta Braves":          "ATL",
+    "Baltimore Orioles":       "BAL",
+    "Boston Red Sox":          "BOS",
+    "Chicago Cubs":            "CHC",
+    "Chicago White Sox":       "CWS",
+    "Cincinnati Reds":         "CIN",
+    "Cleveland Guardians":     "CLE",
+    "Colorado Rockies":        "COL",
+    "Detroit Tigers":          "DET",
+    "Houston Astros":          "HOU",
+    "Kansas City Royals":      "KC",
+    "Los Angeles Angels":      "LAA",
+    "Los Angeles Dodgers":     "LAD",
+    "Miami Marlins":           "MIA",
+    "Milwaukee Brewers":       "MIL",
+    "Minnesota Twins":         "MIN",
+    "New York Mets":           "NYM",
+    "New York Yankees":        "NYY",
+    "Oakland Athletics":       "OAK",
+    "Philadelphia Phillies":   "PHI",
+    "Pittsburgh Pirates":      "PIT",
+    "San Diego Padres":        "SD",
+    "San Francisco Giants":    "SF",
+    "Seattle Mariners":        "SEA",
+    "St. Louis Cardinals":     "STL",
+    "Tampa Bay Rays":          "TB",
+    "Texas Rangers":           "TEX",
+    "Toronto Blue Jays":       "TOR",
+    "Washington Nationals":    "WSH",
+}
+
+MLB_ABV_TO_NAME = {v: k for k, v in MLB_NAME_TO_ABV.items()}
+
+# Sport key → name mapping lookup (for generic methods)
+_SPORT_NAME_MAP = {
+    SPORT_KEY: NAME_TO_ABV,
+    NHL_SPORT_KEY: NHL_NAME_TO_ABV,
+    MLB_SPORT_KEY: MLB_NAME_TO_ABV,
+}
+
 
 class OddsClient:
     """
@@ -429,6 +474,58 @@ class OddsClient:
                 return game
         return None
 
+    # ── MLB game odds ───────────────────────────────────────────────────
+
+    def get_mlb_odds(self, regions="us", markets="h2h,spreads,totals",
+                     odds_format="american"):
+        raw = self._get(
+            f"sports/{MLB_SPORT_KEY}/odds",
+            {"regions": regions, "markets": markets, "oddsFormat": odds_format},
+            ttl=TTL_ODDS,
+        )
+        if raw is None:
+            return []
+        results = []
+        for event in raw:
+            try:
+                home_name = event.get("home_team", "")
+                away_name = event.get("away_team", "")
+                home_abv = MLB_NAME_TO_ABV.get(home_name, home_name)
+                away_abv = MLB_NAME_TO_ABV.get(away_name, away_name)
+                bookmakers_list = event.get("bookmakers", [])
+                ml = None
+                spread = None
+                total = None
+                book = _pick_book(bookmakers_list)
+                if book:
+                    for market in book.get("markets", []):
+                        if market["key"] == "h2h":
+                            outcomes = {o["name"]: o["price"] for o in market.get("outcomes", [])}
+                            ml = {"home": outcomes.get(home_name), "away": outcomes.get(away_name), "book": book["key"]}
+                        elif market["key"] == "spreads":
+                            for outcome in market.get("outcomes", []):
+                                if outcome["name"] == home_name:
+                                    spread = {"home": outcome.get("point"), "away": -outcome.get("point", 0), "book": book["key"]}
+                        elif market["key"] == "totals":
+                            for outcome in market.get("outcomes", []):
+                                if outcome["name"] == "Over":
+                                    total = {"line": outcome["point"], "book": book["key"]}
+                results.append({
+                    "game_id": event.get("id", ""),
+                    "home_team": home_abv,
+                    "away_team": away_abv,
+                    "home_name": home_name,
+                    "away_name": away_name,
+                    "commence_time": event.get("commence_time", ""),
+                    "moneyline": ml,
+                    "spread": spread,
+                    "total": total,
+                })
+            except Exception as e:
+                logger.debug("MLB odds: skipping event — %s", e)
+                continue
+        return results
+
     def check_quota(self) -> Optional[dict]:
         """
         Make a cheap call to check remaining quota without fetching game data.
@@ -458,11 +555,17 @@ class OddsClient:
 
     # ── Player Prop Markets ──────────────────────────────────────────────
 
-    PROP_MARKETS = "player_pass_yds,player_rush_yds,player_reception_yds"
+    NFL_PROP_MARKETS = "player_pass_yds,player_rush_yds,player_reception_yds"
+    NHL_PROP_MARKETS = "player_goals,player_assists,player_shots_on_goal"
+    MLB_PROP_MARKETS = "pitcher_strikeouts,pitcher_earned_runs,batter_hits,batter_total_bases"
 
-    def get_nfl_events(self):
+    # Backward compat alias
+    PROP_MARKETS = NFL_PROP_MARKETS
+
+    def get_events(self, sport_key):
+        name_map = _SPORT_NAME_MAP.get(sport_key, {})
         raw = self._get(
-            f"sports/{SPORT_KEY}/events",
+            f"sports/{sport_key}/events",
             {"dateFormat": "iso"},
             ttl=TTL_ODDS,
         )
@@ -470,28 +573,53 @@ class OddsClient:
             return []
         results = []
         for event in raw:
-            home_abv = NAME_TO_ABV.get(event.get("home_team", ""), "")
-            away_abv = NAME_TO_ABV.get(event.get("away_team", ""), "")
+            home_name = event.get("home_team", "")
+            away_name = event.get("away_team", "")
             results.append({
                 "event_id": event.get("id", ""),
-                "home_team": home_abv,
-                "away_team": away_abv,
+                "home_team": name_map.get(home_name, home_name),
+                "away_team": name_map.get(away_name, away_name),
+                "home_name": home_name,
+                "away_name": away_name,
                 "commence_time": event.get("commence_time", ""),
             })
         return results
 
-    def get_player_props(self, event_id, markets=None):
+    def get_nfl_events(self):
+        return self.get_events(SPORT_KEY)
+
+    def get_nhl_events(self):
+        return self.get_events(NHL_SPORT_KEY)
+
+    def get_mlb_events(self):
+        return self.get_events(MLB_SPORT_KEY)
+
+    def get_player_props(self, event_id, sport_key=None, markets=None, bookmakers=None):
+        sport = sport_key or SPORT_KEY
         if markets is None:
-            markets = self.PROP_MARKETS
+            if sport == NHL_SPORT_KEY:
+                markets = self.NHL_PROP_MARKETS
+            elif sport == MLB_SPORT_KEY:
+                markets = self.MLB_PROP_MARKETS
+            else:
+                markets = self.NFL_PROP_MARKETS
+        params = {"regions": "us", "markets": markets, "oddsFormat": "american"}
+        if bookmakers:
+            params["bookmakers"] = bookmakers
         raw = self._get(
-            f"sports/{SPORT_KEY}/events/{event_id}/odds",
-            {"regions": "us", "markets": markets, "oddsFormat": "american"},
+            f"sports/{sport}/events/{event_id}/odds",
+            params,
             ttl=TTL_ODDS,
         )
         if raw is None:
             return []
-        bookmakers = raw.get("bookmakers", [])
-        book = _pick_book(bookmakers)
+        book_list = raw.get("bookmakers", [])
+        if bookmakers:
+            book = next((b for b in book_list if b["key"] == bookmakers), None)
+            if not book:
+                book = _pick_book(book_list)
+        else:
+            book = _pick_book(book_list)
         if not book:
             return []
         props = []
@@ -507,6 +635,23 @@ class OddsClient:
                     "book": book["key"],
                 })
         return props
+
+    def get_nhl_player_props(self, event_id, markets=None, bookmakers=None):
+        return self.get_player_props(event_id, NHL_SPORT_KEY, markets, bookmakers)
+
+    def get_mlb_player_props(self, event_id, markets=None, bookmakers=None):
+        return self.get_player_props(event_id, MLB_SPORT_KEY, markets, bookmakers)
+
+    def get_alternate_props(self, event_id, sport_key, markets=None, bookmakers=None):
+        if markets is None:
+            if sport_key == NHL_SPORT_KEY:
+                markets = self.NHL_PROP_MARKETS
+            elif sport_key == MLB_SPORT_KEY:
+                markets = self.MLB_PROP_MARKETS
+            else:
+                markets = self.NFL_PROP_MARKETS
+        alt_markets = ",".join(m + "_alternate" for m in markets.split(","))
+        return self.get_player_props(event_id, sport_key, alt_markets, bookmakers)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -581,3 +726,57 @@ def _american_to_prob(ml: float) -> float:
             return abs(ml) / (abs(ml) + 100)
     except (TypeError, ValueError):
         return 0.5
+
+
+# ── Sportsbook UI Constants ──────────────────────────────────────────────────
+
+SPORTSBOOK_OPTIONS = {
+    "DraftKings": "draftkings",
+    "FanDuel": "fanduel",
+    "BetMGM": "betmgm",
+    "Caesars": "caesars",
+    "PointsBet": "pointsbetus",
+    "Bovada": "bovada",
+}
+
+
+# ── Standardized Edge Calculation ─────────────────────────────────────────────
+
+def calc_prop_edge(prediction, line, mae, odds=-110):
+    from scipy.stats import norm
+
+    if mae <= 0:
+        return 0.5, 0.5, 0.0, 'OVER', 0.0
+
+    sigma = mae * 1.253  # MAE → std dev (normal distribution)
+
+    if line is None:
+        # No sportsbook line — conservative model-only estimate
+        z = prediction / sigma if sigma > 0 else 0
+        over_prob = float(norm.cdf(z))
+        direction = 'OVER' if over_prob >= 0.5 else 'UNDER'
+        model_prob = max(over_prob, 1.0 - over_prob)
+        return model_prob, 0.5, 0.0, direction, 0.0
+
+    edge = prediction - line
+    z = edge / sigma
+    over_prob = float(norm.cdf(z))
+    under_prob = 1.0 - over_prob
+
+    if over_prob >= under_prob:
+        model_prob, direction = over_prob, 'OVER'
+    else:
+        model_prob, direction = under_prob, 'UNDER'
+
+    # Convert American odds to implied probability
+    if odds >= 100:
+        implied_prob = 100.0 / (odds + 100.0)
+    elif odds <= -100:
+        implied_prob = abs(odds) / (abs(odds) + 100.0)
+    else:
+        implied_prob = 0.5
+
+    edge_pct = model_prob - implied_prob
+    value_score = edge_pct * model_prob
+
+    return model_prob, implied_prob, edge_pct, direction, value_score

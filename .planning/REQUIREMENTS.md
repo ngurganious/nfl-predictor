@@ -72,6 +72,38 @@
 - [ ] **TEST-09** — Mock model tests for prediction pipelines (shape, probability range, feature count)
 - [ ] **TEST-10** — API response fixture tests (mock ESPN, NHL, MLB, Odds API responses)
 
+### Props Redesign (PROPS)
+
+- [ ] **PROPS-01** — Add `MLB_SPORT_KEY`, `MLB_NAME_TO_ABV` mapping to `apis/odds.py`
+- [ ] **PROPS-02** — Add `get_events(sport_key)` generic method to OddsClient
+- [ ] **PROPS-03** — Generalize `get_player_props()` to accept sport_key + bookmakers parameter
+- [ ] **PROPS-04** — Add `get_nhl_events()`, `get_nhl_player_props()` convenience methods
+- [ ] **PROPS-05** — Add `get_mlb_events()`, `get_mlb_player_props()`, `get_mlb_odds()` convenience methods
+- [ ] **PROPS-06** — Add `get_alternate_props()` method for on-demand alternate line scanning
+- [ ] **PROPS-07** — Sportsbook dropdown in session state (`edgeiq_sportsbook`) shared across all sports
+- [ ] **PROPS-08** — Quota display header ("API Credits: X / Y used") updated after every API call
+- [ ] **PROPS-09** — Season gating: disable prop fetch when sport has no scheduled games
+- [ ] **PROPS-10** — Standardized edge calculation function (`_calc_prop_edge`) replacing 3 ad-hoc approaches
+- [ ] **PROPS-11** — NFL Props tab: integrate sportsbook selector, use standardized edge calc
+- [ ] **PROPS-12** — NHL Props tab: add "Fetch Prop Lines" button, sportsbook lines, edge table
+- [ ] **PROPS-13** — MLB Props tab: add "Fetch Prop Lines" button, sportsbook lines, edge table
+- [ ] **PROPS-14** — Top Picks ranked by value_score (edge × model_prob), not raw confidence
+- [ ] **PROPS-15** — "Scan Alternates" button per game (on-demand, saves credits)
+- [ ] **PROPS-16** — "Model Only — No Live Line" indicator for markets without sportsbook data
+- [ ] **PROPS-17** — Signal badges (STRONG/LEAN/SMALL/PASS) based on edge_pct per EdgeIQ.md standards
+- [ ] **PROPS-18** — Parlay legs carry real sportsbook odds (not hardcoded -110)
+- [ ] **PROPS-19** — Parlay Ladder shows sportsbook source per leg
+
+### Model Enhancement (MODEL)
+
+- [ ] **MODEL-01** — MLB batter models: add opposing SP quality features (era_minus, fip_minus, k_per_9, whip)
+- [ ] **MODEL-02** — Build `mlb_park_factors.csv` with per-venue run and HR park factors
+- [ ] **MODEL-03** — MLB prop + game models: add ballpark factor features
+- [ ] **MODEL-04** — NHL prop models: add opposing goalie quality features (sv_pct, gaa, goalie_score)
+- [ ] **MODEL-05** — NHL prop models: add `is_outdoor` venue feature
+- [ ] **MODEL-06** — NFL prop models: add opponent defensive injury count (stretch goal)
+- [ ] **MODEL-07** — Retrain all modified models, validate MAE improvement, update accuracy figures
+
 ## v2 Requirements (Deferred)
 
 ### Enhanced Features
@@ -116,5 +148,8 @@
 | UI-06 to UI-10 | Phase 5: UI Components | 🔲 Not Started |
 | TEST-01 to TEST-06 | Phase 6: Testing | 🔲 Not Started |
 | TEST-07 to TEST-10 | Phase 6: Testing | 🔲 Not Started |
+| PROPS-01 to PROPS-10 | Phase 7: Props API + Edge Engine | 🔲 Not Started |
+| PROPS-11 to PROPS-19 | Phase 8: Props Tab Redesign | 🔲 Not Started |
+| MODEL-01 to MODEL-07 | Phase 9: Model Enhancement | 🔲 Not Started |
 
-**Coverage:** 52 total requirements · 52 mapped · 0 unmapped
+**Coverage:** 78 total requirements · 78 mapped · 0 unmapped

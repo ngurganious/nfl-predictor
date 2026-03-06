@@ -2069,6 +2069,32 @@ def render_nfl_app():
     # ══════════════════════════════════════════════════
     with tab2:
         st.header("🏃 Player Props + Parlay Builder")
+
+        # ── Sportsbook selector + quota header ──────────────────────
+        from apis.odds import SPORTSBOOK_OPTIONS
+        _sb_col, _quota_col = st.columns([2, 3])
+        with _sb_col:
+            _sb_labels = list(SPORTSBOOK_OPTIONS.keys())
+            _sb_idx = _sb_labels.index(st.session_state.get('edgeiq_sportsbook', 'DraftKings')) if st.session_state.get('edgeiq_sportsbook', 'DraftKings') in _sb_labels else 0
+            _nfl_book_label = st.selectbox(
+                "Your Sportsbook", _sb_labels, index=_sb_idx,
+                key="edgeiq_sportsbook",
+                help="Prop lines fetched from this book. Edge calculations use their prices.",
+            )
+        with _quota_col:
+            _q_used = st.session_state.get('odds_quota_used')
+            _q_rem = st.session_state.get('odds_quota_remaining')
+            if _q_used is not None and _q_rem is not None:
+                _q_total = _q_used + _q_rem
+                _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
+                st.markdown(
+                    f"<div style='margin-top:28px;font-size:0.85rem;color:{_q_color}'>"
+                    f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption("")
+
         _props_mode = st.radio(
             "props_view_mode", ["This Week's Props", "Manual Entry"],
             horizontal=True, label_visibility="collapsed",
@@ -2078,8 +2104,12 @@ def render_nfl_app():
         if _props_mode == "This Week's Props":
             # ── Game-card prop selection for Parlay Ladder ────────────
             schedule = st.session_state.get('weekly_schedule')
-            if schedule is None:
-                st.info("Load the weekly schedule from the **Game Predictor** tab first.")
+            if not schedule:
+                if schedule is not None:
+                    # Schedule was loaded but returned empty — off-season
+                    st.info("NFL is currently off-season. Props are available during the regular season (September\u2013February).")
+                else:
+                    st.info("Load the weekly schedule from the **Game Predictor** tab first.")
             else:
                 # Selection counter + Build Ladder button
                 _rpl_sels = st.session_state.get('rpl_selections', {})
