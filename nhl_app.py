@@ -163,6 +163,7 @@ def load_nhl_skater_stats():
 
 @st.cache_resource
 def _get_nhl_client():
+    from apis.nhl import NHLClient
     return NHLClient()
 
 @st.cache_data
@@ -1235,17 +1236,6 @@ def _render_nhl_weekly_schedule(
         st.error(f"Could not load NHL API: {e}")
         return
 
-    if st.button("🔄 Refresh Schedule", key='nhl_refresh_sched'):
-        # Clear schedule, depth charts, pre-calc cache, odds, and prop auto-selection
-        for k in list(st.session_state.keys()):
-            if (k.startswith('nhl_weekly_schedule') or k.startswith('nhl_dc_')
-                    or k in ('nhl_precalc_done', 'nhl_total_games', 'nhl_props_precalc_done',
-                             'nhl_odds_by_game', 'nhl_props_autosel_done', 'nhl_rpl_selections')
-                    or (k.startswith('nhl_g') and ('_pred' in k or '_expanded' in k or '_ml_home' in k or '_ou_total' in k))
-                    or k.startswith('nhl_props_g') or k.startswith('nhl_props_exp_')):
-                del st.session_state[k]
-        st.rerun()
-
     # Cached NHLClient singleton
     nhl_client = _get_nhl_client()
 
@@ -1259,11 +1249,13 @@ def _render_nhl_weekly_schedule(
     if load_btn:
         with st.spinner("Fetching this week's NHL schedule..."):
             st.session_state[schedule_key] = fetch_nhl_weekly_schedule(nhl_client)
-            # Clear stale prediction/odds state on refresh
+            # Clear stale prediction/odds/props/depth-chart state on refresh
             for k in list(st.session_state.keys()):
-                if k in ('nhl_odds_by_game', 'nhl_precalc_done'):
-                    del st.session_state[k]
-                elif k.startswith('nhl_g') and ('_pred' in k or '_ml_home' in k or '_ou_total' in k):
+                if (k.startswith('nhl_dc_')
+                        or k in ('nhl_precalc_done', 'nhl_total_games', 'nhl_props_precalc_done',
+                                 'nhl_odds_by_game', 'nhl_props_autosel_done', 'nhl_rpl_selections')
+                        or (k.startswith('nhl_g') and ('_pred' in k or '_expanded' in k or '_ml_home' in k or '_ou_total' in k))
+                        or k.startswith('nhl_props_g') or k.startswith('nhl_props_exp_')):
                     del st.session_state[k]
             st.rerun()
 
