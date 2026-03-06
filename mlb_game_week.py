@@ -192,6 +192,32 @@ def _lookup_team_id(team_abbrev: str, mlb_client) -> Optional[int]:
     return None
 
 
+# Lineup slots: (display_label, position_group, slot_index_within_group)
+MLB_LINEUP_SLOTS = [
+    ('C',   'catcher',  0),
+    ('1B',  'infield',  0),
+    ('2B',  'infield',  1),
+    ('3B',  'infield',  2),
+    ('SS',  'infield',  3),
+    ('LF',  'outfield', 0),
+    ('CF',  'outfield', 1),
+    ('RF',  'outfield', 2),
+    ('DH',  'dh',       0),
+]
+
+
+def get_mlb_players_for_slot(roster_by_pos, pos_group, slot_idx):
+    players = roster_by_pos.get(pos_group, [])
+    if not players:
+        return ['Unknown']
+    names = [p.get('name', 'Unknown') for p in players]
+    if slot_idx < len(names):
+        top = names[slot_idx]
+        rest = [n for i, n in enumerate(names) if i != slot_idx]
+        return [top] + rest
+    return names if names else ['Unknown']
+
+
 def get_mlb_starter_pitcher(game: Dict, side: str = 'home') -> Optional[Dict]:
     """
     Return the probable starting pitcher for a side ('home' or 'away').

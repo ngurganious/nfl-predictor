@@ -1344,8 +1344,12 @@ def render_nfl_app():
             if pred_result:
                 st.divider()
                 render_prediction_result(pred_result, home_team, away_team, pfx, game_date=_game_date)
-    
-    
+
+            # ── Inline Props (link to Props tab) ────────────────────────────
+            if pred_result:
+                st.caption("\U0001f3af Player props available in the **Player Props** tab above")
+
+
     # ── Tabs ──────────────────────────────────────────
     tab1, tab2, tab_ladder, tab3, tab4, tab5, tab6 = st.tabs([
         "🎯 Game Predictor + Lineups",

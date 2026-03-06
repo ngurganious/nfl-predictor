@@ -674,7 +674,11 @@ def _sample_mlb_week_schedule() -> dict:
 
 def _render_weekly_games(model, features, elo_ratings, pitcher_ratings, team_stats,
                          total_model_pkg, mlb_games, full_pitcher_ratings, mlb_client):
-    from mlb_game_week import fetch_mlb_weekly_schedule, get_mlb_sp_display_name
+    from mlb_game_week import (
+        fetch_mlb_weekly_schedule, get_mlb_sp_display_name,
+        get_mlb_team_roster_by_position, get_mlb_players_for_slot,
+        MLB_LINEUP_SLOTS,
+    )
 
     btn_col, _, sample_col = st.columns([2, 4, 2])
     with btn_col:
@@ -773,44 +777,152 @@ def _render_weekly_games(model, features, elo_ratings, pitcher_ratings, team_sta
             _conf   = max(ph, pa)
 
             if _conf > 0.75:
-                _conf_icon = "🔒"
+                _conf_icon = "\U0001f512"
             elif _conf > 0.65:
-                _conf_icon = "🔥"
+                _conf_icon = "\U0001f525"
             elif _conf > 0.58:
-                _conf_icon = "✅"
+                _conf_icon = "\u2705"
             else:
-                _conf_icon = "⚠️"
+                _conf_icon = "\u26a0\ufe0f"
 
             h_sp_label = get_mlb_sp_display_name(home_sp) if home_sp else "TBD"
             a_sp_label = get_mlb_sp_display_name(away_sp) if away_sp else "TBD"
 
-            exp_label  = (
-                f"{_conf_icon} {away_name} @ {home_name} — {game_time}  |  "
-                f"Pred: **{_winner}** ({_conf*100:.0f}%)  |  "
-                f"SP: {a_sp_label} vs {h_sp_label}"
-            )
+            # Build label: AWAY @ HOME | ML | O/U | Time | SP | Pred + Kelly%
+            _lbl_parts = [f"{away_name} @ {home_name}"]
+            _lbl_ml = _res.get('moneyline_home')
+            if _lbl_ml is not None:
+                _lbl_parts.append(f"ML {_lbl_ml:+.0f}")
+            _lbl_ou = _res.get('vegas_total')
+            if _lbl_ou is not None:
+                _lbl_parts.append(f"O/U {_lbl_ou:.1f}")
+            _lbl_parts.append(game_time)
+            _lbl_parts.append(f"SP: {a_sp_label} vs {h_sp_label}")
+            _lbl_parts.append(f"{_conf_icon} {_winner} {_conf*100:.0f}%")
+
+            # Kelly badge for collapsed label
+            _pick_home_lbl = ph >= 0.5
+            _pick_ml_lbl = _lbl_ml if _lbl_ml is not None else -110
+            if not _pick_home_lbl and _lbl_ml is not None:
+                _pick_ml_lbl = -_lbl_ml
+            _risk_lbl = st.session_state.get('mlb_risk_tolerance', 'Moderate')
+            _frac_lbl = {'Conservative': 0.25, 'Moderate': 0.5, 'Aggressive': 1.0}[_risk_lbl]
+            try:
+                _b_lbl = (100.0 / abs(_pick_ml_lbl)) if _pick_ml_lbl < 0 else (_pick_ml_lbl / 100.0)
+                _k_lbl = max(0.0, min((_b_lbl * _conf - (1.0 - _conf)) / _b_lbl * _frac_lbl, 0.10)) * 100
+            except Exception:
+                _k_lbl = 0.0
+            if _k_lbl >= 1.0:
+                _lbl_parts.append(f"\U0001f4a0 {_k_lbl:.1f}%")
+            else:
+                _lbl_parts.append("\u26aa PASS")
+
+            exp_label = "  |  ".join(_lbl_parts)
             exp_key    = f"mlb_g{day_key}{idx}_expanded"
             expanded   = st.session_state.get(exp_key, False)
 
             with st.expander(exp_label, expanded=expanded):
                 st.session_state[exp_key] = True
-                sc1, sc2 = st.columns(2)
-                with sc1:
-                    st.markdown(f"**🏠 {home_name}** ({home})")
-                    _render_sp_panel(home, home_sp, pitcher_ratings)
-                with sc2:
-                    st.markdown(f"**✈️ {away_name}** ({away})")
-                    _render_sp_panel(away, away_sp, pitcher_ratings)
 
-                if venue:
-                    st.caption(f"📍 {venue}")
+                # ── Game Conditions (3-col) ─────────────────────────────
+                st.markdown("##### Game Conditions")
+                gc1, gc2, gc3 = st.columns(3)
+                with gc1:
+                    if venue:
+                        st.caption(f"\U0001f3df\ufe0f {venue}")
+                    st.caption(f"\U0001f305 {'Day' if day_night == 'day' else 'Night'} game")
+                with gc2:
+                    st.markdown(f"**\U0001f3e0 {home_name}**")
+                    _render_sp_panel(home, home_sp, pitcher_ratings)
+                    st.markdown(f"**\u2708\ufe0f {away_name}**")
+                    _render_sp_panel(away, away_sp, pitcher_ratings)
+                with gc3:
+                    _ml_h = _res.get('moneyline_home')
+                    if _ml_h is not None:
+                        st.caption(f"Home ML: {_ml_h:+.0f}")
+                    _vt = _res.get('vegas_total')
+                    if _vt is not None:
+                        st.caption(f"O/U: {_vt:.1f}")
+                    _ou_p = _res.get('ou_pred')
+                    if _ou_p is not None:
+                        lean = "OVER" if _res.get('ou_diff', 0) > 0 else "UNDER"
+                        st.caption(f"Model: {_ou_p:.1f} runs ({lean})")
+
+                # ── Starting Lineups ─────────────────────────────────
+                st.divider()
+                st.markdown("##### Starting Lineups")
+
+                _lu_pfx = f"mlb_g{day_key}{idx}"
+
+                def _get_mlb_roster(team):
+                    rk = f'mlb_roster_{team}'
+                    if rk not in st.session_state:
+                        try:
+                            st.session_state[rk] = get_mlb_team_roster_by_position(team, mlb_client)
+                        except Exception:
+                            st.session_state[rk] = {}
+                    return st.session_state.get(rk, {})
+
+                home_roster = _get_mlb_roster(home) if mlb_client else {}
+                away_roster = _get_mlb_roster(away) if mlb_client else {}
+
+                hdr_h, hdr_v, hdr_a = st.columns([5, 1, 5])
+                hdr_h.markdown(f"**{home_name}**")
+                hdr_v.markdown("")
+                hdr_a.markdown(f"**{away_name}**")
+
+                for lbl, pos_group, slot_idx in MLB_LINEUP_SLOTS:
+                    col_h, col_v, col_a = st.columns([5, 1, 5])
+                    with col_h:
+                        opts_h = get_mlb_players_for_slot(home_roster, pos_group, slot_idx) if home_roster else ['Unknown']
+                        st.selectbox(
+                            lbl, opts_h, index=0,
+                            key=f"{_lu_pfx}_h_{lbl}", label_visibility='collapsed')
+                    with col_v:
+                        st.markdown(
+                            f"<div style='text-align:center;padding-top:8px'><small>{lbl}</small></div>",
+                            unsafe_allow_html=True)
+                    with col_a:
+                        opts_a = get_mlb_players_for_slot(away_roster, pos_group, slot_idx) if away_roster else ['Unknown']
+                        st.selectbox(
+                            lbl, opts_a, index=0,
+                            key=f"{_lu_pfx}_a_{lbl}", label_visibility='collapsed')
 
                 if _res:
+                    st.divider()
                     render_mlb_prediction_result(
                         _res,
                         prefix=f"mlb_wk_{day_key}{idx}",
                         game_date=game_date,
                     )
+
+                # ── Inline Player Props ─────────────────────────────
+                _mlb_props_data = st.session_state.get(f'mlb_props_g{game_counter}', [])
+                if _mlb_props_data:
+                    _show_pk = f"mlb_g{day_key}{idx}_show_inline_props"
+                    if st.button("\U0001f3af Show Player Props", key=f"mlb_g{day_key}{idx}_inline_props_btn",
+                                 use_container_width=True):
+                        st.session_state[_show_pk] = not st.session_state.get(_show_pk, False)
+                        st.rerun()
+                    if st.session_state.get(_show_pk, False):
+                        _top_p = sorted(_mlb_props_data,
+                                        key=lambda x: x.get('confidence', 0), reverse=True)[:6]
+                        _rows_p = ""
+                        for _mp in _top_p:
+                            _rows_p += (
+                                f"<tr>"
+                                f"<td>{_mp.get('player', '?')}</td>"
+                                f"<td>{_mp.get('prop_type', '?')}</td>"
+                                f"<td>{_mp.get('prediction', 0):.2f}</td>"
+                                f"<td>{_mp.get('direction', 'OVER')}</td>"
+                                f"</tr>"
+                            )
+                        st.markdown(f"""
+                        <table class="top-picks-table">
+                            <thead><tr><th>Player</th><th>Prop</th><th>Pred</th><th>Dir</th></tr></thead>
+                            <tbody>{_rows_p}</tbody>
+                        </table>
+                        """, unsafe_allow_html=True)
 
             game_counter += 1
 

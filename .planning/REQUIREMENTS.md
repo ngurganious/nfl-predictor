@@ -16,6 +16,16 @@
 - [x] **HOME-02** — Top picks table: collects highest probability game + prop picks from all loaded sports in session state
 - [x] **HOME-03** — New tagline: "Vegas sets the line. We find the gaps. Three sports. One systematic edge."
 
+### Game Card Standardization (CARD)
+
+- [x] **CARD-01** — Standardize NHL collapsed label: pipe-separated format with ML, O/U, Time, Pred + Kelly%
+- [x] **CARD-02** — Standardize MLB collapsed label: pipe-separated format with ML, O/U, Time, SP, Pred + Kelly%
+- [x] **CARD-03** — NHL conditions: 3-column layout (Venue/Indoor-Outdoor, ML/O/U inputs, Goalie preview)
+- [x] **CARD-04** — MLB conditions: 3-column layout (Venue/Day-Night, SP panels, Vegas lines)
+- [x] **CARD-05** — MLB lineup builder: 9 batting position selectboxes (C/1B/2B/3B/SS/LF/CF/RF/DH) in 3-col layout
+- [x] **CARD-06** — NHL inline props: "Show Player Props" toggle button with top 6 props table per game
+- [x] **CARD-07** — MLB inline props: "Show Player Props" toggle button with top 6 props table per game
+
 ### Architecture (ARCH)
 
 - [ ] **ARCH-01** — Create `core/` package with shared pure-Python modules: `kelly.py`, `elo.py`, `odds.py`, `backtest.py`
@@ -97,6 +107,7 @@
 |-------------|-------|--------|
 | CACHE-01 to CACHE-05 | Phase 0: Caching Fixes | ✅ Done |
 | HOME-01 to HOME-03 | Phase 0.5: Homepage Redesign | ✅ Done |
+| CARD-01 to CARD-07 | Phase 0.75: Card Standardization | ✅ Done |
 | ARCH-01 to ARCH-05 | Phase 1: Core Extraction | 🔲 Not Started |
 | ARCH-06 to ARCH-09 | Phase 2: Sports Packages | 🔲 Not Started |
 | ARCH-10 to ARCH-12 | Phase 3: Tab Splitting | 🔲 Not Started |
@@ -106,4 +117,4 @@
 | TEST-01 to TEST-06 | Phase 6: Testing | 🔲 Not Started |
 | TEST-07 to TEST-10 | Phase 6: Testing | 🔲 Not Started |
 
-**Coverage:** 45 total requirements · 45 mapped · 0 unmapped
+**Coverage:** 52 total requirements · 52 mapped · 0 unmapped

@@ -34,6 +34,23 @@
 
 ---
 
+### Phase 0.75: Game Card Standardization
+> Standardize collapsed labels, conditions sections, lineups, and inline props across all sports.
+
+**Requirements:** CARD-01, CARD-02, CARD-03, CARD-04, CARD-05, CARD-06, CARD-07
+
+**Acceptance Criteria:**
+- NHL + MLB collapsed labels match NFL format (pipe-separated: ML | O/U | Time | Pred + Kelly%)
+- NHL conditions: 3-col (Venue/Indoor, Lines, Goalie preview)
+- MLB conditions: 3-col (Venue/Day-Night, SP panels, Vegas lines)
+- MLB batting lineups: 9 position selectboxes (C/1B/2B/3B/SS/LF/CF/RF/DH)
+- NHL + MLB inline props: "Show Player Props" toggle with compact table per game card
+- NFL game cards: caption pointing to Props tab
+
+**Status:** ✅ Done — 2026-03-06
+
+---
+
 ### Phase 1: Core Extraction
 > Extract shared pure-Python logic into `core/` package. Lowest risk, highest deduplication value.
 
@@ -154,6 +171,7 @@
 |-------|------|-------------|--------|------|--------|
 | 0 | Caching Fixes | CACHE-01 to CACHE-05 | Low | Low | ✅ |
 | 0.5 | Homepage Redesign | HOME-01 to HOME-03 | Low | Low | ✅ |
+| 0.75 | Card Standardization | CARD-01 to CARD-07 | Medium | Low | ✅ |
 | 1 | Core Extraction | ARCH-01 to ARCH-05 | Medium | Low | 🔲 |
 | 2 | Sports Packages | ARCH-06 to ARCH-09, ARCH-17 | Medium | Low | 🔲 |
 | 3 | Monolith Splitting | ARCH-10 to ARCH-16 | High | Medium | 🔲 |

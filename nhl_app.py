@@ -801,10 +801,6 @@ def _render_nhl_game_expander(
     home_name = NHL_TEAM_NAMES.get(home, home)
     away_name  = NHL_TEAM_NAMES.get(away, away)
 
-    label = f"{away_name} @ {home_name}  |  {game.get('game_time_et','TBD')}"
-    if game.get('is_outdoor'):
-        label += "  🌨️ OUTDOOR"
-
     pfx = f"nhl_g{idx}"
 
     # Extract ISO game date for prediction logging
@@ -814,37 +810,82 @@ def _render_nhl_game_expander(
     except Exception:
         _game_date = date.today().isoformat()
 
-    # Append pre-calculated prediction badge to collapsed label
+    # Build collapsed label: AWAY @ HOME | ML ±NNN | O/U N.N | Time | Weather | Pred + Kelly%
+    label_parts = [f"{away_name} @ {home_name}"]
+
+    _lbl_ml = st.session_state.get(f'{pfx}_ml_home')
+    if _lbl_ml is not None:
+        label_parts.append(f"ML {_lbl_ml:+.0f}")
+    _lbl_ou = st.session_state.get(f'{pfx}_ou_total')
+    if _lbl_ou is not None:
+        label_parts.append(f"O/U {_lbl_ou:.1f}")
+
+    label_parts.append(game.get('game_time_et', 'TBD'))
+    if game.get('is_outdoor'):
+        label_parts.append("\U0001f328\ufe0f OUTDOOR")
+
     _pre = st.session_state.get(f'{pfx}_pred')
     if _pre and 'error' not in _pre:
         _h_prob = _pre.get('home_win_prob', 0.5)
         _winner = home if _h_prob >= 0.5 else away
         _conf   = max(_h_prob, 1.0 - _h_prob)
-        _emoji  = "🔥" if _conf >= 0.65 else ("✅" if _conf >= 0.58 else "⚪")
-        label  += f"  |  {_emoji} {_winner} {_conf*100:.0f}%"
+        _emoji  = "\U0001f525" if _conf >= 0.65 else ("\u2705" if _conf >= 0.58 else "\u26aa")
+        label_parts.append(f"{_emoji} {_winner} {_conf*100:.0f}%")
+
+        # Kelly % badge for collapsed label
+        _pick_home_lbl = _h_prob >= 0.5
+        _pick_ml_lbl = _lbl_ml if _lbl_ml is not None else -110
+        if not _pick_home_lbl and _lbl_ml is not None:
+            _pick_ml_lbl = -_lbl_ml
+        _risk_lbl = st.session_state.get('nhl_risk_tolerance', 'Moderate')
+        _frac_lbl = {'Conservative': 0.25, 'Moderate': 0.5, 'Aggressive': 1.0}[_risk_lbl]
+        try:
+            _b_lbl = (100.0 / abs(_pick_ml_lbl)) if _pick_ml_lbl < 0 else (_pick_ml_lbl / 100.0)
+            _k_lbl = max(0.0, min((_b_lbl * _conf - (1.0 - _conf)) / _b_lbl * _frac_lbl, 0.10)) * 100
+        except Exception:
+            _k_lbl = 0.0
+        if _k_lbl >= 1.0:
+            label_parts.append(f"\U0001f4a0 {_k_lbl:.1f}%")
+        else:
+            label_parts.append("\u26aa PASS")
+
+    label = "  |  ".join(label_parts)
 
     with st.expander(label, expanded=st.session_state.get(f'{pfx}_expanded', False)):
 
-        # ── Vegas Lines ──────────────────────────────────────────────────────
+        # ── Game Conditions ──────────────────────────────────────────────────
+        st.markdown("##### Game Conditions")
         c1, c2, c3 = st.columns(3)
         with c1:
+            st.caption(f"\U0001f3df\ufe0f {game.get('venue', 'TBD')}")
+            if game.get('is_outdoor'):
+                st.caption("\U0001f328\ufe0f Outdoor Game")
+                st.slider("Temp (\u00b0F)", 0, 50, 32, key=f"{pfx}_temp")
+                st.slider("Wind (mph)", 0, 30, 5, key=f"{pfx}_wind")
+            else:
+                st.caption("\U0001f3e0 Indoor")
+        with c2:
             moneyline_home = st.number_input(
                 "Home ML (American)", value=None, format="%.0f",
                 key=f"{pfx}_ml_home", placeholder="e.g. -150"
             )
-        with c2:
             vegas_total = st.number_input(
                 "Vegas O/U (total goals)", value=None, format="%.1f",
                 key=f"{pfx}_ou_total", placeholder="e.g. 6.0"
             )
         with c3:
-            if game.get('is_outdoor'):
-                st.slider("Temp (°F)", 0, 50, 32, key=f"{pfx}_temp")
-                st.slider("Wind (mph)", 0, 30, 5, key=f"{pfx}_wind")
+            # Goalie preview from pre-calc or depth charts
+            _pre_g = st.session_state.get(f'{pfx}_pred')
+            if _pre_g and _pre_g.get('h_goalie'):
+                st.caption(f"\U0001f945 {home}: {_pre_g['h_goalie']}")
+            if _pre_g and _pre_g.get('a_goalie'):
+                st.caption(f"\U0001f945 {away}: {_pre_g['a_goalie']}")
+            if not _pre_g:
+                st.caption("\U0001f945 Goalies shown in lineups below")
 
         if live_lines and (live_lines.get('moneyline') or live_lines.get('total')):
             _book = (live_lines.get('moneyline') or live_lines.get('total') or {}).get('book', '')
-            st.caption(f"📡 Live lines · {_book or 'Odds API'} · Edit fields above to override")
+            st.caption(f"\U0001f4e1 Live lines \u00b7 {_book or 'Odds API'} \u00b7 Edit fields above to override")
 
         # ── Starting Lineups ─────────────────────────────────────────────────
         st.divider()
@@ -982,8 +1023,36 @@ def _render_nhl_game_expander(
 
         if pred_key in st.session_state:
             if st.session_state.get(fprint_key) != current_fprint:
-                st.caption("⚠️ Goalie or Vegas lines changed — click Predict to update")
+                st.caption("\u26a0\ufe0f Goalie or Vegas lines changed \u2014 click Predict to update")
             render_nhl_prediction_result(st.session_state[pred_key], prefix=pfx, game_date=_game_date)
+
+        # ── Inline Player Props ──────────────────────────────────────────────
+        _props_data = st.session_state.get(f'nhl_props_g{idx}', [])
+        if _props_data:
+            _show_props_key = f"{pfx}_show_inline_props"
+            if st.button("\U0001f3af Show Player Props", key=f"{pfx}_inline_props_btn",
+                         use_container_width=True):
+                st.session_state[_show_props_key] = not st.session_state.get(_show_props_key, False)
+                st.rerun()
+            if st.session_state.get(_show_props_key, False):
+                _top = sorted(_props_data, key=lambda x: x.get('best_prob', 0), reverse=True)[:6]
+                _rows = ""
+                for _p in _top:
+                    _prob_pct = _p.get('best_prob', 0) * 100
+                    _rows += (
+                        f"<tr>"
+                        f"<td>{_p.get('name', '?')}</td>"
+                        f"<td>{_p.get('best_type', '?')}</td>"
+                        f"<td>{_p.get('best_pred', 0):.2f}</td>"
+                        f"<td>{_prob_pct:.0f}%</td>"
+                        f"</tr>"
+                    )
+                st.markdown(f"""
+                <table class="top-picks-table">
+                    <thead><tr><th>Player</th><th>Prop</th><th>Pred</th><th>Conf</th></tr></thead>
+                    <tbody>{_rows}</tbody>
+                </table>
+                """, unsafe_allow_html=True)
 
 
 # ── Manual entry tab ──────────────────────────────────────────────────────────
