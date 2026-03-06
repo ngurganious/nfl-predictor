@@ -10,6 +10,12 @@
 - [x] **CACHE-04** — Replace `NHLClient` session-state pattern with `@st.cache_resource` singleton
 - [x] **CACHE-05** — Add "Load / Refresh Schedule" button to NHL (stop auto-fetching schedule + odds + precalc on first visit)
 
+### Homepage Redesign (HOME)
+
+- [x] **HOME-01** — Sport icon bar: 8 circular icons (NFL/NBA/MLB/NHL/NCAAF/NCAAB/Soccer/UFC), 3 active + 5 "Coming Soon"
+- [x] **HOME-02** — Top picks table: collects highest probability game + prop picks from all loaded sports in session state
+- [x] **HOME-03** — New tagline: "Vegas sets the line. We find the gaps. Three sports. One systematic edge."
+
 ### Architecture (ARCH)
 
 - [ ] **ARCH-01** — Create `core/` package with shared pure-Python modules: `kelly.py`, `elo.py`, `odds.py`, `backtest.py`
@@ -90,6 +96,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CACHE-01 to CACHE-05 | Phase 0: Caching Fixes | ✅ Done |
+| HOME-01 to HOME-03 | Phase 0.5: Homepage Redesign | ✅ Done |
 | ARCH-01 to ARCH-05 | Phase 1: Core Extraction | 🔲 Not Started |
 | ARCH-06 to ARCH-09 | Phase 2: Sports Packages | 🔲 Not Started |
 | ARCH-10 to ARCH-12 | Phase 3: Tab Splitting | 🔲 Not Started |
@@ -99,4 +106,4 @@
 | TEST-01 to TEST-06 | Phase 6: Testing | 🔲 Not Started |
 | TEST-07 to TEST-10 | Phase 6: Testing | 🔲 Not Started |
 
-**Coverage:** 42 total requirements · 42 mapped · 0 unmapped
+**Coverage:** 45 total requirements · 45 mapped · 0 unmapped

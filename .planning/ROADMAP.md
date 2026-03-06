@@ -18,6 +18,22 @@
 
 ---
 
+### Phase 0.5: Homepage Redesign
+> DraftKings-inspired homepage with sport icon bar, top picks table, and new tagline.
+
+**Requirements:** HOME-01, HOME-02, HOME-03
+
+**Acceptance Criteria:**
+- 8 sport icons in horizontal bar (3 active, 5 grayed "Coming Soon")
+- Active icon click navigates to sport, inactive shows toast
+- Top 10 picks table populates from session state (game + prop predictions)
+- New tagline: "Vegas sets the line. We find the gaps."
+- Sport detail cards retained below icon bar
+
+**Status:** ✅ Done — 2026-03-06
+
+---
+
 ### Phase 1: Core Extraction
 > Extract shared pure-Python logic into `core/` package. Lowest risk, highest deduplication value.
 
@@ -137,6 +153,7 @@
 | Phase | Name | Requirements | Effort | Risk | Status |
 |-------|------|-------------|--------|------|--------|
 | 0 | Caching Fixes | CACHE-01 to CACHE-05 | Low | Low | ✅ |
+| 0.5 | Homepage Redesign | HOME-01 to HOME-03 | Low | Low | ✅ |
 | 1 | Core Extraction | ARCH-01 to ARCH-05 | Medium | Low | 🔲 |
 | 2 | Sports Packages | ARCH-06 to ARCH-09, ARCH-17 | Medium | Low | 🔲 |
 | 3 | Monolith Splitting | ARCH-10 to ARCH-16 | High | Medium | 🔲 |

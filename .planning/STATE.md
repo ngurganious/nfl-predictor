@@ -3,9 +3,9 @@
 ## Current Position
 
 - **Milestone:** 1 — Architecture + UI Rework
-- **Phase:** 0 — Caching Fixes (DONE)
-- **Status:** Phase 0 complete. All 5 caching issues fixed. Ready for Phase 1 or Part B (Homepage).
-- **Next action:** Execute Part B (Homepage Redesign) or `/gsd:plan-phase 1` for Core Extraction
+- **Phase:** 0.5 — Homepage Redesign (DONE)
+- **Status:** Phase 0 + 0.5 complete. Caching fixed, homepage redesigned. Ready for Part C (Card Standardization).
+- **Next action:** Execute Part C (Game Card Standardization) per approved plan
 
 ## Decisions
 
@@ -33,4 +33,4 @@ None.
 
 ## Last Updated
 
-2026-03-05 — Phase 0 (Caching Fixes) complete. All 5 CACHE requirements done.
+2026-03-06 — Phase 0.5 (Homepage Redesign) complete. Sport icon bar + top picks table + new tagline.
