@@ -34,7 +34,7 @@ def _read_css():
     search_paths = [Path(__file__).parent / "assets" / "style.css", Path(__file__).parent / "style.css"]
     for css_file in search_paths:
         if css_file.exists():
-            with open(css_file) as f:
+            with open(css_file, encoding="utf-8") as f:
                 return f.read()
     return ""
 

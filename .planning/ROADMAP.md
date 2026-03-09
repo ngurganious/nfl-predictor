@@ -107,41 +107,33 @@
 
 ---
 
-### Phase 4: Design System Foundation
-> Create the CSS design system and Streamlit theming for a professional SaaS look.
+### Phase 4: UX/UI Redesign
+> Premium dark-mode Bloomberg-terminal redesign. No ML model, prediction logic, or API changes — purely UI/UX.
+> Full spec: EdgestackIQ UX/UI Redesign Spec (user-provided, 13 implementation steps).
 
-**Requirements:** UI-01, UI-02, UI-03, UI-04, UI-05
+**Requirements:** UI-01 through UI-10
 
-**Acceptance Criteria:**
-- `.streamlit/config.toml` created with EdgeIQ palette
-- CSS design tokens expanded to ~30 variables (colors, spacing, borders, shadows, typography)
-- Streamlit chrome hidden (hamburger, footer, toolbar)
-- All inline `st.markdown(style=...)` consolidated into CSS classes
-- Tab navigation has professional styling (hover, active states, transitions)
-- App looks noticeably more professional without any layout changes
+**Acceptance Criteria (13 steps, in priority order):**
 
-**Status:** 🔲 Not Started
+| # | Step | Files | Status |
+|---|------|-------|--------|
+| 1 | CSS design tokens — `assets/style.css` + `.streamlit/config.toml` | `assets/style.css`, `.streamlit/config.toml` | ✅ Done — 2026-03-09 |
+| 2 | Signal badge CSS classes — replace all inline badge styles | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 3 | Homepage cleanup — remove sport cards + value props grid | `app.py` | 🔲 Not Started |
+| 4 | Sportsbook selector — add to header, wire to session state | `app.py` | 🔲 Not Started |
+| 5 | Sport icon availability logic — dim/coming-soon states | `app.py` | 🔲 Not Started |
+| 6 | Top 10 pre-load — background fetch on app load for ACTIVE sports | `app.py` | 🔲 Not Started |
+| 7 | Parlay tray session state — add `parlay_tray` + `parlay_tray_open` | `app.py` | 🔲 Not Started |
+| 8 | Floating tray UI — collapsed bar + expanded bottom sheet | `app.py`, `assets/style.css` | 🔲 Not Started |
+| 9 | Tab restructure — remove Track Record + Super Bowl, reorder tabs | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 10 | Back navigation — "← Sports" button on all sport views | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 11 | "Add to Parlay Tray" buttons — wire Game Prediction + Props to tray | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 12 | Cross-sport ladder header — multi-sport parlay detection | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 13 | Head-to-Head tab — add to NHL and MLB (already exists in NFL) | `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
 
-**Depends on:** Phase 3 (so CSS classes reference final file structure)
+**Status:** 🚧 In Progress (1/13 steps done)
 
----
-
-### Phase 5: UI Component Polish
-> Build shared UI components and apply consistent design across all sports.
-
-**Requirements:** UI-06, UI-07, UI-08, UI-09, UI-10
-
-**Acceptance Criteria:**
-- Shared game card component with sport-specific content slots
-- Consistent sidebar branding and controls across all sports
-- Loading states / skeleton screens during data fetches
-- Signal badges (STRONG/LEAN/SMALL/PASS) rendered via CSS classes, not inline styles
-- Confidence tier badges (LOCK/HIGH/MOD/TOSS-UP) rendered via CSS classes
-- Visual consistency verified across NFL, NHL, MLB tabs
-
-**Status:** 🔲 Not Started
-
-**Depends on:** Phase 4
+**Depends on:** None (UI-only, no architecture refactoring required)
 
 ---
 
@@ -181,9 +173,7 @@
 - Quota header displays "API Credits: X / Y used" after every API call
 - Season gating disables prop fetch for sports with no scheduled games
 
-**Status:** 🔲 Not Started
-
-**Depends on:** None (can start immediately)
+**Status:** ✅ Done — 2026-03-06
 
 ---
 
@@ -237,9 +227,8 @@
 | 1 | Core Extraction | ARCH-01 to ARCH-05 | Medium | Low | 🔲 |
 | 2 | Sports Packages | ARCH-06 to ARCH-09, ARCH-17 | Medium | Low | 🔲 |
 | 3 | Monolith Splitting | ARCH-10 to ARCH-16 | High | Medium | 🔲 |
-| 4 | Design System | UI-01 to UI-05 | Medium | Low | 🔲 |
-| 5 | UI Components | UI-06 to UI-10 | Medium | Low | 🔲 |
+| 4 | UX/UI Redesign (13 steps) | UI-01 to UI-10 | High | Low | 🚧 1/13 |
 | 6 | Test Suite | TEST-01 to TEST-10 | Medium | Low | 🔲 |
-| 7 | Props API + Edge Engine | PROPS-01 to PROPS-10 | Medium | Low | 🔲 |
+| 7 | Props API + Edge Engine | PROPS-01 to PROPS-10 | Medium | Low | ✅ |
 | 8 | Props Tab Redesign | PROPS-11 to PROPS-19 | High | Medium | 🔲 |
 | 9 | Model Enhancement | MODEL-01 to MODEL-07 | High | Medium | 🔲 |

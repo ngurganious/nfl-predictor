@@ -1,0 +1,380 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   EdgestackIQ — Design Tokens
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root {
+    /* Colors — Surfaces */
+    --bg-base: #0a0f1e;
+    --bg-surface: #0f172a;
+    --bg-card: #131c2e;
+    --bg-card-hover: #1a2540;
+    --border: #1e2d45;
+    --border-active: #22d3ee;
+
+    /* Brand */
+    --cyan: #22d3ee;
+    --cyan-dim: #0e7490;
+
+    /* Signals */
+    --signal-lock: #10b981;
+    --signal-strong: #22d3ee;
+    --signal-lean: #f59e0b;
+    --signal-pass: #64748b;
+    --signal-edge: #6366f1;
+
+    /* Text */
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #475569;
+
+    /* Spacing */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+
+    /* Borders */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-card: 0 2px 12px rgba(0,0,0,0.4);
+    --shadow-glow: 0 0 20px rgba(34,211,238,0.15);
+
+    /* Typography */
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: 'Inter', sans-serif;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Hide Streamlit Chrome
+   ══════════════════════════════════════════════════════════════════════════════ */
+#MainMenu, footer, header, .stDeployButton { display: none !important; }
+.block-container { padding-top: 1rem !important; max-width: 1400px; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Force Dark Theme Backgrounds
+   ══════════════════════════════════════════════════════════════════════════════ */
+.stApp {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+}
+
+[data-testid="stSidebar"] {
+    background-color: #020617;
+    border-right: 1px solid var(--border);
+}
+
+[data-testid="stHeader"] {
+    background-color: rgba(10, 15, 30, 0.9);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Typography
+   ══════════════════════════════════════════════════════════════════════════════ */
+h1, h2, h3 {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #fff !important;
+}
+
+p, div, label, span {
+    font-family: var(--font-sans);
+    color: var(--text-secondary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Metrics
+   ══════════════════════════════════════════════════════════════════════════════ */
+[data-testid="stMetricValue"] {
+    font-family: var(--font-mono);
+    color: var(--cyan) !important;
+    font-weight: 700;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-secondary) !important;
+    font-size: 0.9rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Signal Badges (legacy — existing code references these)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.signal-badge {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-block;
+    margin-right: var(--space-2);
+}
+
+.signal-lock {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.signal-strong {
+    background: rgba(34, 211, 238, 0.15);
+    color: var(--cyan);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+}
+
+.signal-lean {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.signal-pass {
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Badge System (new — spec Section 6)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    font-family: var(--font-mono);
+}
+
+.badge-strong-edge {
+    background: rgba(34, 211, 238, 0.15);
+    color: var(--cyan);
+    border: 1px solid var(--cyan-dim);
+}
+
+.badge-edge {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border: 1px solid #4338ca;
+}
+
+.badge-lean {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid #92400e;
+}
+
+.badge-pass {
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid #334155;
+}
+
+.badge-lock {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid #065f46;
+}
+
+.badge-strong {
+    background: rgba(34, 211, 238, 0.15);
+    color: var(--cyan);
+    border: 1px solid var(--cyan-dim);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Logo
+   ══════════════════════════════════════════════════════════════════════════════ */
+.edgeiq-logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.edgeiq-icon {
+    color: var(--cyan);
+    font-size: 1.8rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Buttons
+   ══════════════════════════════════════════════════════════════════════════════ */
+.stButton > button {
+    background-color: var(--bg-card);
+    color: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.stButton > button:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+}
+
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+}
+
+.stButton > button[kind="primary"]:hover {
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
+    transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Cards / Containers
+   ══════════════════════════════════════════════════════════════════════════════ */
+[data-testid="stExpander"] {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.streamlit-expanderHeader {
+    background-color: transparent !important;
+    color: #fff !important;
+    font-weight: 600;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Sport Icon Bar
+   ══════════════════════════════════════════════════════════════════════════════ */
+.sport-bar {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    margin-bottom: 0.5rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sport-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    min-width: 64px;
+}
+
+.sport-icon .icon-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    border: 2px solid var(--border);
+    background: var(--bg-card);
+    transition: all 0.2s;
+}
+
+.sport-icon .icon-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+}
+
+/* Active sport — full brightness, glow on hover */
+.sport-icon.active .icon-circle {
+    border-color: var(--cyan);
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+.sport-icon.active .icon-label {
+    color: var(--cyan);
+}
+
+.sport-icon.active:hover .icon-circle {
+    border-color: var(--cyan);
+    box-shadow: var(--shadow-glow);
+}
+
+/* Dim sport — off-season / no games today */
+.sport-icon.dim {
+    opacity: 0.5;
+}
+
+.sport-icon.dim:hover {
+    opacity: 0.7;
+}
+
+/* Coming soon — model not built */
+.sport-icon.coming-soon {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* Legacy inactive (maps to dim) */
+.sport-icon.inactive .icon-circle {
+    opacity: 0.4;
+    filter: grayscale(80%);
+}
+
+.sport-icon.inactive .icon-label {
+    opacity: 0.4;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Top Picks Table
+   ══════════════════════════════════════════════════════════════════════════════ */
+.top-picks-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.top-picks-table th {
+    text-align: left;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 2px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.top-picks-table td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--bg-surface);
+    color: var(--text-primary);
+}
+
+.top-picks-table tr:hover td {
+    background: rgba(34, 211, 238, 0.05);
+}
+
+.pick-sport {
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pick-sport.nfl { color: #22c55e; }
+.pick-sport.nhl { color: #3b82f6; }
+.pick-sport.mlb { color: #f97316; }
