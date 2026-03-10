@@ -104,92 +104,278 @@ _SPORTS = [
 # ── Top picks collector ──────────────────────────────────────────────────────
 def _collect_top_picks(limit=10):
     picks = []
+
+    # Build flat game lists from schedules for date/time lookup
+    def _flat_games(sched_key):
+        sched = st.session_state.get(sched_key, {})
+        return [g for gs in sched.values() for g in gs]
+
+    nfl_games = _flat_games('weekly_schedule')
+    nhl_games = _flat_games('nhl_weekly_schedule')
+    mlb_games = _flat_games('mlb_weekly_schedule')
+
+    def _game_time(games, idx):
+        if 0 <= idx < len(games):
+            g = games[idx]
+            dl = g.get('game_date_label', '')
+            tl = g.get('game_time_et', '')
+            return f"{dl} · {tl}" if dl and tl else dl or tl or ''
+        return ''
+
     # NFL game predictions
     for k, v in st.session_state.items():
         if k.startswith('g') and k.endswith('_pred') and not k.startswith(('nhl_', 'mlb_')):
-            if isinstance(v, dict) and 'prob_home' in v:
-                prob = max(v.get('prob_home', 0.5), 1 - v.get('prob_home', 0.5))
-                winner = v.get('home_team', '?') if v.get('prob_home', 0.5) >= 0.5 else v.get('away_team', '?')
+            if isinstance(v, dict) and 'final_prob_home' in v:
+                prob = max(v.get('final_prob_home', 0.5), 1 - v.get('final_prob_home', 0.5))
+                winner = v.get('home_team', '?') if v.get('final_prob_home', 0.5) >= 0.5 else v.get('away_team', '?')
+                loser = v.get('away_team', '?') if v.get('final_prob_home', 0.5) >= 0.5 else v.get('home_team', '?')
+                idx = int(k[1:].replace('_pred', '')) if k[1:].replace('_pred', '').isdigit() else -1
                 picks.append({
                     'sport': 'NFL', 'sport_css': 'nfl',
-                    'matchup': f"{v.get('away_team', '?')} @ {v.get('home_team', '?')}",
-                    'bet': f"{winner} ML",
-                    'prob': prob,
+                    'player': f"{winner} vs {loser}",
+                    'team': winner, 'position': '', 'is_forward': 0,
+                    'bet': 'Moneyline',
+                    'prob': prob, 'pred': prob,
+                    'edge_pct': 0, 'line': None,
+                    'odds': -110, 'has_line': False,
                     'type': 'Game',
+                    'game_time': _game_time(nfl_games, idx),
                 })
     # NHL game predictions
     for k, v in st.session_state.items():
         if k.startswith('nhl_g') and k.endswith('_pred'):
-            if isinstance(v, dict) and 'prob_home' in v:
-                prob = max(v.get('prob_home', 0.5), 1 - v.get('prob_home', 0.5))
-                winner = v.get('home_team', '?') if v.get('prob_home', 0.5) >= 0.5 else v.get('away_team', '?')
+            if isinstance(v, dict) and 'home_win_prob' in v:
+                prob = max(v.get('home_win_prob', 0.5), 1 - v.get('home_win_prob', 0.5))
+                winner = v.get('home_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('away_team', '?')
+                loser = v.get('away_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('home_team', '?')
+                idx_str = k.replace('nhl_g', '').replace('_pred', '')
+                idx = int(idx_str) if idx_str.isdigit() else -1
                 picks.append({
                     'sport': 'NHL', 'sport_css': 'nhl',
-                    'matchup': f"{v.get('away_team', '?')} @ {v.get('home_team', '?')}",
-                    'bet': f"{winner} ML",
-                    'prob': prob,
+                    'player': f"{winner} vs {loser}",
+                    'team': winner, 'position': '', 'is_forward': 0,
+                    'bet': 'Moneyline',
+                    'prob': prob, 'pred': prob,
+                    'edge_pct': 0, 'line': None,
+                    'odds': -110, 'has_line': False,
                     'type': 'Game',
+                    'game_time': _game_time(nhl_games, idx),
                 })
     # MLB game predictions
     for k, v in st.session_state.items():
         if k.startswith('mlb_g') and k.endswith('_pred'):
-            if isinstance(v, dict) and 'prob_home' in v:
-                prob = max(v.get('prob_home', 0.5), 1 - v.get('prob_home', 0.5))
-                winner = v.get('home_team', '?') if v.get('prob_home', 0.5) >= 0.5 else v.get('away_team', '?')
+            if isinstance(v, dict) and 'home_win_prob' in v:
+                prob = max(v.get('home_win_prob', 0.5), 1 - v.get('home_win_prob', 0.5))
+                winner = v.get('home_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('away_team', '?')
+                loser = v.get('away_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('home_team', '?')
                 picks.append({
                     'sport': 'MLB', 'sport_css': 'mlb',
-                    'matchup': f"{v.get('away_team', '?')} @ {v.get('home_team', '?')}",
-                    'bet': f"{winner} ML",
-                    'prob': prob,
+                    'player': f"{winner} vs {loser}",
+                    'team': winner, 'position': '', 'is_forward': 0,
+                    'bet': 'Moneyline',
+                    'prob': prob, 'pred': prob,
+                    'edge_pct': 0, 'line': None,
+                    'odds': -110, 'has_line': False,
                     'type': 'Game',
+                    'game_time': '',
                 })
-    # NHL player props
+    # NHL player props (list of dicts from _compute_game_props)
     for k, v in st.session_state.items():
-        if k.startswith('nhl_props_g') and isinstance(v, dict):
-            for player, pdata in v.items():
-                if isinstance(pdata, dict) and 'goals' in pdata:
-                    for prop_type in ('goals', 'assists', 'shots'):
-                        pred = pdata.get(prop_type)
-                        conf = pdata.get(f'{prop_type}_conf')
-                        if pred is not None and conf is not None and conf > 0.5:
-                            picks.append({
-                                'sport': 'NHL', 'sport_css': 'nhl',
-                                'matchup': player,
-                                'bet': f"Over 0.5 {prop_type}",
-                                'prob': conf,
-                                'type': 'Prop',
-                            })
-    # MLB player props
+        if k.startswith('nhl_props_g') and isinstance(v, list):
+            idx_str = k.replace('nhl_props_g', '')
+            idx = int(idx_str) if idx_str.isdigit() else -1
+            gt = _game_time(nhl_games, idx)
+            for prop in v:
+                if isinstance(prop, dict) and 'best_prob' in prop:
+                    picks.append({
+                        'sport': 'NHL', 'sport_css': 'nhl',
+                        'player': prop.get('name', '?'),
+                        'team': prop.get('team', ''),
+                        'position': prop.get('position', ''),
+                        'is_forward': prop.get('is_forward', 1),
+                        'bet': f"{prop.get('best_type', 'Shots')} {prop.get('best_direction', 'OVER')}",
+                        'prob': prop.get('best_prob', 0),
+                        'pred': prop.get('best_pred', 0),
+                        'edge_pct': prop.get('best_edge_pct', 0),
+                        'line': prop.get('best_line'),
+                        'odds': prop.get('best_odds', -110),
+                        'has_line': prop.get('best_has_line', False),
+                        'type': 'Prop',
+                        'game_time': gt,
+                    })
+    # MLB player props (list of dicts from _compute_game_props)
     for k, v in st.session_state.items():
-        if k.startswith('mlb_props_g') and isinstance(v, dict):
-            for player, pdata in v.items():
-                if isinstance(pdata, dict):
-                    for prop_type in ('strikeouts', 'hits', 'total_bases'):
-                        pred = pdata.get(prop_type)
-                        conf = pdata.get(f'{prop_type}_conf')
-                        if pred is not None and conf is not None and conf > 0.5:
-                            picks.append({
-                                'sport': 'MLB', 'sport_css': 'mlb',
-                                'matchup': player,
-                                'bet': f"Over 0.5 {prop_type.replace('_', ' ')}",
-                                'prob': conf,
-                                'type': 'Prop',
-                            })
+        if k.startswith('mlb_props_g') and isinstance(v, list):
+            for prop in v:
+                if isinstance(prop, dict) and 'best_prob' in prop:
+                    picks.append({
+                        'sport': 'MLB', 'sport_css': 'mlb',
+                        'player': prop.get('name', '?'),
+                        'team': prop.get('team', ''),
+                        'position': prop.get('position', ''),
+                        'is_forward': 0,
+                        'bet': f"{prop.get('best_type', 'K')} {prop.get('best_direction', 'OVER')}",
+                        'prob': prop.get('best_prob', 0),
+                        'pred': prop.get('best_pred', 0),
+                        'edge_pct': prop.get('best_edge_pct', 0),
+                        'line': prop.get('best_line'),
+                        'odds': prop.get('best_odds', -110),
+                        'has_line': prop.get('best_has_line', False),
+                        'type': 'Prop',
+                        'game_time': '',
+                    })
     picks.sort(key=lambda x: x['prob'], reverse=True)
     return picks[:limit]
 
-def _signal_badge(prob):
-    if prob >= 0.75:
-        return '<span class="signal-badge signal-lock">LOCK</span>'
-    elif prob >= 0.65:
-        return '<span class="signal-badge signal-strong">STRONG</span>'
-    elif prob >= 0.58:
-        return '<span class="signal-badge signal-lean">LEAN</span>'
+def _signal_badge(edge_pct):
+    if edge_pct >= 0.04:
+        return "<span class='signal-badge signal-strong'>STRONG</span>"
+    elif edge_pct >= 0.02:
+        return "<span class='signal-badge signal-lean'>LEAN</span>"
+    elif edge_pct >= 0.01:
+        return "<span class='signal-badge signal-small'>SMALL</span>"
     else:
-        return '<span class="signal-badge signal-pass">PASS</span>'
+        return "<span class='signal-badge signal-pass'>PASS</span>"
+
+# ── Pre-load picks for active sports ──────────────────────────────────────────
+def _preload_active_sports():
+    if 'homepage_preload_done' in st.session_state:
+        return
+
+    import pickle
+
+    with st.spinner("Loading today's picks across all sports..."):
+        # ── NHL ──────────────────────────────────────────────────────
+        try:
+            from apis.nhl import NHLClient
+            from nhl_game_week import fetch_nhl_weekly_schedule
+            from nhl_app import (load_nhl_model, run_nhl_prediction,
+                                 load_nhl_total_model, load_nhl_games,
+                                 load_nhl_goalie_ratings, load_nhl_team_stats,
+                                 load_nhl_full_goalie_ratings,
+                                 load_nhl_player_models, load_nhl_skater_stats,
+                                 _compute_game_props)
+
+            nhl_sched = fetch_nhl_weekly_schedule(NHLClient())
+            if nhl_sched:
+                st.session_state['nhl_weekly_schedule'] = nhl_sched
+                _m, _f, _, _elo = load_nhl_model()
+                if _m is not None:
+                    _tp = load_nhl_total_model()
+                    _gr = load_nhl_goalie_ratings()
+                    _ts = load_nhl_team_stats()
+                    _ng = load_nhl_games()
+                    _fg = load_nhl_full_goalie_ratings()
+                    _idx = 0
+                    for _day, _games in nhl_sched.items():
+                        for _g in _games:
+                            _pk = f"nhl_g{_idx}_pred"
+                            if _pk not in st.session_state:
+                                try:
+                                    _r = run_nhl_prediction(
+                                        _g['home_team'], _g['away_team'],
+                                        _m, _f, _elo, _gr, _ts, _tp,
+                                        nhl_games=_ng, full_goalie_ratings=_fg,
+                                    )
+                                    if _r and 'error' not in _r:
+                                        st.session_state[_pk] = _r
+                                except Exception:
+                                    pass
+                            _idx += 1
+                    st.session_state['nhl_precalc_done'] = True
+                # NHL player props
+                _pm = load_nhl_player_models()
+                _ss = load_nhl_skater_stats()
+                if _pm and not _ss.empty:
+                    _all = [g for gs in nhl_sched.values() for g in gs]
+                    for _pi, _pg in enumerate(_all):
+                        _ppk = f'nhl_props_g{_pi}'
+                        if _ppk not in st.session_state:
+                            try:
+                                st.session_state[_ppk] = _compute_game_props(
+                                    _pg['home_team'], _pg['away_team'],
+                                    _pm, _ss, _ts,
+                                )
+                            except Exception:
+                                pass
+                    st.session_state['nhl_props_precalc_done'] = True
+        except Exception:
+            pass
+
+        # ── MLB ──────────────────────────────────────────────────────
+        try:
+            from apis.mlb import MLBClient
+            from mlb_game_week import fetch_mlb_weekly_schedule
+            from mlb_app import (load_mlb_model, run_mlb_prediction,
+                                 load_mlb_total_model, load_mlb_games,
+                                 load_mlb_pitcher_ratings, load_mlb_team_stats)
+
+            mlb_sched = fetch_mlb_weekly_schedule(MLBClient())
+            if mlb_sched:
+                st.session_state['mlb_weekly_schedule'] = mlb_sched
+                _m, _f, _, _elo = load_mlb_model()
+                if _m is not None:
+                    _tp = load_mlb_total_model()
+                    _pr = load_mlb_pitcher_ratings()
+                    _ts = load_mlb_team_stats()
+                    _mg = load_mlb_games()
+                    for _day, _games in mlb_sched.items():
+                        for _i, _g in enumerate(_games):
+                            _pk = f"mlb_g{_day}{_i}_pred"
+                            if _pk not in st.session_state:
+                                try:
+                                    _r = run_mlb_prediction(
+                                        _g['home_team'], _g['away_team'],
+                                        _m, _f, _elo, _pr, _ts, _tp,
+                                        mlb_games=_mg,
+                                    )
+                                    if _r and 'error' not in _r:
+                                        st.session_state[_pk] = _r
+                                except Exception:
+                                    pass
+                    st.session_state['mlb_precalc_done'] = True
+        except Exception:
+            pass
+
+        # ── NFL (ELO-only — full model runs when user enters NFL) ─
+        try:
+            from apis.espn import ESPNClient
+            from game_week import fetch_weekly_schedule
+
+            nfl_sched = fetch_weekly_schedule(ESPNClient())
+            if nfl_sched:
+                st.session_state['weekly_schedule'] = nfl_sched
+                try:
+                    with open("elo_ratings.pkl", "rb") as f:
+                        _nfl_elo = pickle.load(f)
+                except Exception:
+                    _nfl_elo = {}
+                if _nfl_elo:
+                    _idx = 0
+                    for _day, _games in nfl_sched.items():
+                        for _g in _games:
+                            _pk = f"g{_idx}_pred"
+                            if _pk not in st.session_state:
+                                _he = _nfl_elo.get(_g['home_team'], 1500)
+                                _ae = _nfl_elo.get(_g['away_team'], 1500)
+                                _ph = 1.0 / (1.0 + 10 ** ((_ae - _he) / 400))
+                                st.session_state[_pk] = {
+                                    'home_team': _g['home_team'],
+                                    'away_team': _g['away_team'],
+                                    'final_prob_home': _ph,
+                                    'base_prob_home': _ph,
+                                }
+                            _idx += 1
+        except Exception:
+            pass
+
+    st.session_state['homepage_preload_done'] = True
+
 
 # ── Home page ─────────────────────────────────────────────────────────────────
 def _render_home():
+    _preload_active_sports()
+
     # Hero
     logo_path = Path(__file__).parent / "assets" / "logo.svg"
     if not logo_path.exists():
@@ -233,33 +419,82 @@ def _render_home():
     # ── Top Picks Table ───────────────────────────────────────────────
     picks = _collect_top_picks()
     if picks:
-        st.markdown("### \U0001f4ca Highest Probability Picks")
-        rows_html = ""
-        for p in picks:
-            badge = _signal_badge(p['prob'])
-            rows_html += (
-                f"<tr>"
-                f"<td><span class='pick-sport {p['sport_css']}'>{p['sport']}</span></td>"
-                f"<td>{p['matchup']}</td>"
-                f"<td><strong>{p['bet']}</strong></td>"
-                f"<td>{p['prob']*100:.1f}%</td>"
-                f"<td>{badge}</td>"
-                f"<td>{p['type']}</td>"
-                f"</tr>"
+        st.markdown("### \U0001f3c6 Top Picks")
+        st.caption("Top 10 props across today's slate — sorted by model probability")
+        hc = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
+        hc[0].caption("Pick")
+        hc[1].caption("Player")
+        hc[2].caption("Prop")
+        hc[3].caption("Line")
+        hc[4].caption("Pred")
+        hc[5].caption("Edge%")
+        hc[6].caption("Odds")
+        hc[7].caption("Signal")
+        st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
+        for ti, p in enumerate(picks):
+            cols = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
+            cols[0].checkbox("Select", value=False, key=f"home_tp_{ti}", label_visibility='collapsed')
+            # Player + sport badge + position badge + team
+            sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
+            sc = sport_colors.get(p['sport_css'], '#94a3b8')
+            pos = p.get('position', '')
+            pos_html = ''
+            if pos:
+                pc = '#22d3ee' if p.get('is_forward') else '#a78bfa'
+                pos_html = (f"&nbsp;<span style='background:{pc};color:#0f172a;border-radius:4px;"
+                            f"padding:1px 5px;font-size:0.75em;font-weight:700'>{pos}</span>")
+            team_label = f"&nbsp;{p['team']}" if p.get('team') else ''
+            gt_html = ''
+            if p.get('game_time'):
+                gt_html = f"<br><span style='color:#64748b;font-size:0.78em'>{p['game_time']}</span>"
+            cols[1].markdown(
+                f"**{p['player']}** "
+                f"<span style='background:{sc};color:#0f172a;border-radius:4px;"
+                f"padding:1px 5px;font-size:0.7em;font-weight:700'>{p['sport'].upper()}</span>"
+                f"{pos_html}{team_label}{gt_html}",
+                unsafe_allow_html=True,
             )
-        st.markdown(f"""
-        <table class="top-picks-table">
-            <thead>
-                <tr>
-                    <th>Sport</th><th>Matchup</th><th>Bet</th>
-                    <th>Prob</th><th>Signal</th><th>Type</th>
-                </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-        """, unsafe_allow_html=True)
+            # Prop type + direction
+            if p['type'] == 'Prop':
+                parts = p['bet'].split(' ', 1)
+                prop_type = parts[0] if parts else p['bet']
+                direction = parts[1] if len(parts) > 1 else 'OVER'
+                dir_color = '#22c55e' if direction == 'OVER' else '#ef4444'
+                cols[2].markdown(
+                    f"<span style='color:#f1f5f9'>{prop_type}</span>"
+                    f"<br><span style='color:{dir_color};font-size:0.82em'>{direction}</span>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                cols[2].markdown(f"<span style='color:#f1f5f9'>{p['bet']}</span>", unsafe_allow_html=True)
+            # Line
+            if p.get('has_line') and p.get('line') is not None:
+                cols[3].markdown(f"<span style='color:#f1f5f9;font-weight:600'>{p['line']}</span>", unsafe_allow_html=True)
+            else:
+                cols[3].markdown("<span style='color:#64748b;font-size:0.78em'>No line</span>", unsafe_allow_html=True)
+            # Pred
+            pred_val = p.get('pred', p.get('prob', 0))
+            cols[4].markdown(f"<span style='color:#f1f5f9'>{pred_val:.2f}</span>", unsafe_allow_html=True)
+            # Edge%
+            ep = p.get('edge_pct', 0)
+            if p.get('has_line'):
+                ep_color = '#22c55e' if ep >= 0.02 else '#eab308' if ep >= 0.01 else '#94a3b8'
+                cols[5].markdown(f"<span style='color:{ep_color};font-weight:600'>{ep*100:.1f}%</span>", unsafe_allow_html=True)
+            else:
+                # No sportsbook line — show model prob as context
+                mp = p.get('prob', 0)
+                mp_color = '#22c55e' if mp >= 0.65 else '#eab308' if mp >= 0.55 else '#94a3b8'
+                cols[5].markdown(f"<span style='color:{mp_color};font-size:0.82em'>{mp*100:.0f}%</span>", unsafe_allow_html=True)
+            # Odds
+            _odds = p.get('odds', -110)
+            cols[6].markdown(f"<span style='color:#cbd5e1'>{_odds:+d}</span>", unsafe_allow_html=True)
+            # Signal
+            if p.get('has_line'):
+                cols[7].markdown(_signal_badge(ep), unsafe_allow_html=True)
+            else:
+                cols[7].markdown("<span style='color:#64748b;font-size:0.78em'>Model</span>", unsafe_allow_html=True)
     else:
-        st.markdown("### \U0001f4ca Top Picks")
+        st.markdown("### \U0001f3c6 Top Picks")
         st.info("Load a sport schedule to see today's highest probability picks across all sports.")
 
 
