@@ -1369,30 +1369,18 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
     mae_bh  = bh_pkg.get('mae', 0.45)
     mae_bt  = bt_pkg.get('mae', 0.70)
 
-    # ── Sportsbook selector + quota header ──────────────────────────────
-    from apis.odds import SPORTSBOOK_OPTIONS
-    sb_col, quota_col = st.columns([2, 3])
-    with sb_col:
-        _sb_labels = list(SPORTSBOOK_OPTIONS.keys())
-        _sb_idx = _sb_labels.index(st.session_state.get('edgeiq_sportsbook', 'DraftKings')) if st.session_state.get('edgeiq_sportsbook', 'DraftKings') in _sb_labels else 0
-        selected_book_label = st.selectbox(
-            "Your Sportsbook", _sb_labels, index=_sb_idx,
-            key="edgeiq_sportsbook",
-            help="Prop lines fetched from this book. Edge calculations use their prices.",
+    # ── Quota header ────────────────────────────────────────────────────
+    selected_book_label = st.session_state.get('edgeiq_sportsbook', 'DraftKings')
+    _q_used = st.session_state.get('odds_quota_used')
+    _q_rem = st.session_state.get('odds_quota_remaining')
+    if _q_used is not None and _q_rem is not None:
+        _q_total = _q_used + _q_rem
+        _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
+        st.markdown(
+            f"<div style='font-size:0.85rem;color:{_q_color}'>"
+            f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
+            unsafe_allow_html=True,
         )
-    with quota_col:
-        _q_used = st.session_state.get('odds_quota_used')
-        _q_rem = st.session_state.get('odds_quota_remaining')
-        if _q_used is not None and _q_rem is not None:
-            _q_total = _q_used + _q_rem
-            _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
-            st.markdown(
-                f"<div style='margin-top:28px;font-size:0.85rem;color:{_q_color}'>"
-                f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.caption("")
 
     # Selection counter + Ladder CTA
     _sels = st.session_state.get('mlb_rpl_selections', {})
@@ -1824,23 +1812,6 @@ def render_mlb_app():
             st.session_state['sport'] = None
             st.rerun()
 
-    # Inject badge CSS (same as NFL/NHL)
-    st.markdown("""
-    <style>
-    .signal-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.85em;
-        font-weight: 600;
-        margin: 4px 0;
-    }
-    .signal-lock   { background-color: #7c3aed; color: white; }
-    .signal-strong { background-color: #22c55e; color: white; }
-    .signal-lean   { background-color: #eab308; color: black; }
-    .signal-pass   { background-color: #94a3b8; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
 
     st.title("⚾ MLB Predictor")
 

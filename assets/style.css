@@ -135,6 +135,12 @@ p, div, label, span {
     border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
+.signal-small {
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
 .signal-pass {
     background: rgba(100, 116, 139, 0.15);
     color: var(--text-secondary);

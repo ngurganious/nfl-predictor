@@ -118,10 +118,10 @@
 | # | Step | Files | Status |
 |---|------|-------|--------|
 | 1 | CSS design tokens — `assets/style.css` + `.streamlit/config.toml` | `assets/style.css`, `.streamlit/config.toml` | ✅ Done — 2026-03-09 |
-| 2 | Signal badge CSS classes — replace all inline badge styles | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
-| 3 | Homepage cleanup — remove sport cards + value props grid | `app.py` | 🔲 Not Started |
-| 4 | Sportsbook selector — add to header, wire to session state | `app.py` | 🔲 Not Started |
-| 5 | Sport icon availability logic — dim/coming-soon states | `app.py` | 🔲 Not Started |
+| 2 | Signal badge CSS classes — replace all inline badge styles | `final_app.py`, `nhl_app.py`, `mlb_app.py` | ✅ Done — 2026-03-09 |
+| 3 | Homepage cleanup — remove sport cards + value props grid | `app.py` | ✅ Done — 2026-03-09 |
+| 4 | Sportsbook selector — add to header, wire to session state | `app.py` | ✅ Done — 2026-03-09 |
+| 5 | Sport icon availability logic — dim/coming-soon states | `app.py` | ✅ Done — 2026-03-09 |
 | 6 | Top 10 pre-load — background fetch on app load for ACTIVE sports | `app.py` | 🔲 Not Started |
 | 7 | Parlay tray session state — add `parlay_tray` + `parlay_tray_open` | `app.py` | 🔲 Not Started |
 | 8 | Floating tray UI — collapsed bar + expanded bottom sheet | `app.py`, `assets/style.css` | 🔲 Not Started |
@@ -131,7 +131,7 @@
 | 12 | Cross-sport ladder header — multi-sport parlay detection | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
 | 13 | Head-to-Head tab — add to NHL and MLB (already exists in NFL) | `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
 
-**Status:** 🚧 In Progress (1/13 steps done)
+**Status:** 🚧 In Progress (5/13 steps done)
 
 **Depends on:** None (UI-only, no architecture refactoring required)
 
@@ -227,7 +227,7 @@
 | 1 | Core Extraction | ARCH-01 to ARCH-05 | Medium | Low | 🔲 |
 | 2 | Sports Packages | ARCH-06 to ARCH-09, ARCH-17 | Medium | Low | 🔲 |
 | 3 | Monolith Splitting | ARCH-10 to ARCH-16 | High | Medium | 🔲 |
-| 4 | UX/UI Redesign (13 steps) | UI-01 to UI-10 | High | Low | 🚧 1/13 |
+| 4 | UX/UI Redesign (13 steps) | UI-01 to UI-10 | High | Low | 🚧 5/13 |
 | 6 | Test Suite | TEST-01 to TEST-10 | Medium | Low | 🔲 |
 | 7 | Props API + Edge Engine | PROPS-01 to PROPS-10 | Medium | Low | ✅ |
 | 8 | Props Tab Redesign | PROPS-11 to PROPS-19 | High | Medium | 🔲 |

@@ -47,14 +47,26 @@ if 'account_name' not in st.session_state:
     st.session_state['account_name'] = 'Guest'
 if 'show_acct_modal' not in st.session_state:
     st.session_state['show_acct_modal'] = False
+if 'edgeiq_sportsbook' not in st.session_state:
+    st.session_state['edgeiq_sportsbook'] = 'DraftKings'
 
-# ── Account placeholder (top right) ──────────────────────────────────────────
-def _render_account_header():
-    _, _, acct_col = st.columns([6, 2, 2])
+# ── Sportsbook options (display label → API key) ─────────────────────────────
+_SPORTSBOOK_LABELS = ["DraftKings", "FanDuel", "BetMGM", "Caesars", "PointsBet", "Bovada"]
+
+# ── Header (sportsbook top-left, account top-right) ──────────────────────────
+def _render_header():
+    sb_col, _, acct_col = st.columns([2, 5, 3])
+    with sb_col:
+        _sb_idx = _SPORTSBOOK_LABELS.index(st.session_state['edgeiq_sportsbook']) if st.session_state['edgeiq_sportsbook'] in _SPORTSBOOK_LABELS else 0
+        st.selectbox(
+            "Sportsbook", _SPORTSBOOK_LABELS, index=_sb_idx,
+            key="edgeiq_sportsbook",
+            label_visibility="collapsed",
+        )
     with acct_col:
         name = st.session_state.get('account_name', 'Guest')
         st.markdown(f"**{name}** &nbsp; 👤", unsafe_allow_html=True)
-        if st.button("⚙️ Settings", key="acct_settings_btn", use_container_width=True):
+        if st.button("Settings", key="acct_settings_btn", use_container_width=True):
             st.session_state['show_acct_modal'] = not st.session_state.get('show_acct_modal', False)
             st.rerun()
 
@@ -199,70 +211,24 @@ def _render_home():
         </div>
     """, unsafe_allow_html=True)
 
-    # ── Sport Icon Bar ────────────────────────────────────────────────
-    icons_html = '<div class="sport-bar">'
-    for s in _SPORTS:
-        cls = "active" if s["active"] else "inactive"
-        icons_html += (
-            f'<div class="sport-icon {cls}" data-sport="{s["key"]}">'
-            f'  <div class="icon-circle">{s["icon"]}</div>'
-            f'  <span class="icon-label">{s["label"]}</span>'
-            f'</div>'
-        )
-    icons_html += '</div>'
-    st.markdown(icons_html, unsafe_allow_html=True)
-
-    # Streamlit buttons (hidden visually but functional) — one row of 8 columns
+    # ── Sport Icon Buttons ────────────────────────────────────────────
     cols = st.columns(len(_SPORTS))
     for i, s in enumerate(_SPORTS):
         with cols[i]:
+            cls = "active" if s["active"] else "inactive"
+            st.markdown(
+                f'<div class="sport-icon {cls}">'
+                f'  <div class="icon-circle">{s["icon"]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
             if s["active"]:
                 if st.button(s["label"], key=f"home_sport_{s['key']}", use_container_width=True):
                     st.session_state['sport'] = s['key']
                     st.rerun()
             else:
-                if st.button(s["label"], key=f"home_sport_{s['key']}", use_container_width=True):
-                    st.toast(f"{s['label']} coming soon!")
-
-    st.divider()
-
-    # ── Sport Cards (details below icons) ─────────────────────────────
-    nfl_col, nhl_col, mlb_col = st.columns(3, gap="large")
-
-    with nfl_col:
-        with st.container(border=True):
-            st.markdown("### \U0001f3c8 NFL Football")
-            st.markdown("""
-            <div style="margin-bottom: 16px;">
-                <span class="signal-badge signal-strong">69.3% Accuracy</span>
-                <span class="signal-badge signal-pass">26 Features</span>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("Game predictions \u00b7 Player props \u00b7 Kelly bet sizing \u00b7 Backtesting")
-
-    with nhl_col:
-        with st.container(border=True):
-            st.markdown("### \U0001f3d2 NHL Hockey")
-            st.markdown("""
-            <div style="margin-bottom: 16px;">
-                <span class="signal-badge signal-lean">58.0% Accuracy</span>
-                <span class="signal-badge signal-pass">Goalie Quality</span>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("Moneyline model \u00b7 Total goals \u00b7 Player props \u00b7 Parlay builder")
-
-    with mlb_col:
-        with st.container(border=True):
-            st.markdown("### \u26be MLB Baseball")
-            st.markdown("""
-            <div style="margin-bottom: 16px;">
-                <span class="signal-badge signal-lean">58.0% Accuracy</span>
-                <span class="signal-badge signal-pass">29 Features</span>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("SP quality model \u00b7 Run totals \u00b7 Player props \u00b7 Kelly sizing")
-
-    st.divider()
+                if st.button(s["label"], key=f"home_sport_{s['key']}", use_container_width=True, disabled=True):
+                    pass
 
     # ── Top Picks Table ───────────────────────────────────────────────
     picks = _collect_top_picks()
@@ -296,22 +262,9 @@ def _render_home():
         st.markdown("### \U0001f4ca Top Picks")
         st.info("Load a sport schedule to see today's highest probability picks across all sports.")
 
-    st.divider()
-
-    # Value Props Grid
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### \U0001f4d0 The Math")
-        st.caption("Gradient Boosting + Random Forest ensembles stacked with Logistic Regression meta-learners. 25 years of training data.")
-    with c2:
-        st.markdown("#### \U0001f6e1\ufe0f The Discipline")
-        st.caption("Kelly Criterion bankroll management. We size every bet based on your edge and risk tolerance.")
-    with c3:
-        st.markdown("#### \U0001f50d The Transparency")
-        st.caption("Every prediction shows confidence scores, feature breakdowns, and historical backtesting results.")
 
 # ── Router ────────────────────────────────────────────────────────────────────
-_render_account_header()
+_render_header()
 
 sport = st.session_state.get('sport')
 

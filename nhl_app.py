@@ -2143,9 +2143,9 @@ def _nhl_rpl_remove(leg_id):
     st.session_state['nhl_rpl_selections'] = sels
 
 
-def _compute_game_props(home, away, player_models, skater_stats, team_stats):
+def _compute_game_props(home, away, player_models, skater_stats, team_stats, vegas_props=None):
     import math
-    from scipy.stats import norm as _norm
+    from apis.odds import calc_prop_edge
 
     if skater_stats is None or skater_stats.empty or not player_models:
         return []
@@ -2153,6 +2153,25 @@ def _compute_game_props(home, away, player_models, skater_stats, team_stats):
     goals_pkg   = player_models.get('goals', {})
     assists_pkg = player_models.get('assists', {})
     shots_pkg   = player_models.get('shots', {})
+
+    # Build vegas lookup: lowercase player name → {market_key: {line, odds, book, name}}
+    _vl = {}
+    if vegas_props:
+        for vp in vegas_props:
+            pn = vp.get('player', '').strip().lower()
+            mk = vp.get('market', '')
+            if pn not in _vl:
+                _vl[pn] = {}
+            # Keep OVER line (name == "Over") as the primary reference
+            if vp.get('name', '').lower() == 'over':
+                _vl[pn][mk] = {'line': vp.get('line'), 'odds': vp.get('odds', -110), 'book': vp.get('book', '')}
+
+    # Map Odds API market keys to our internal names
+    _MKT_MAP = {
+        'player_goals': 'goals', 'player_goals_alternate': 'goals',
+        'player_assists': 'assists', 'player_assists_alternate': 'assists',
+        'player_shots_on_goal': 'shots', 'player_shots_on_goal_alternate': 'shots',
+    }
 
     def _opp_ctx(opp):
         if team_stats is None or team_stats.empty or opp not in team_stats.index:
@@ -2198,24 +2217,53 @@ def _compute_game_props(home, away, player_models, skater_stats, team_stats):
             a_pred = max(0.0, min(_pred(assists_pkg) or base['assists_pg'], 2.5))
             s_pred = max(0.5, min(_pred(shots_pkg)   or base['shots_pg'],  10.0))
 
-            g_prob = 1.0 - math.exp(-g_pred)
-            a_prob = 1.0 - math.exp(-a_pred)
-            s_mae  = shots_pkg.get('mae', 2.1) if shots_pkg else 2.1
-            s_prob = float(_norm.sf((3.5 - s_pred) / max(s_mae, 0.1)))
+            g_mae = goals_pkg.get('mae', 0.35) if goals_pkg else 0.35
+            a_mae = assists_pkg.get('mae', 0.45) if assists_pkg else 0.45
+            s_mae = shots_pkg.get('mae', 2.1) if shots_pkg else 2.1
 
-            best_prob = max(g_prob, a_prob, s_prob)
-            if best_prob == g_prob:
-                best_type, best_desc = 'Goals',   'Anytime Goal Scorer'
-                best_pred, best_mae  = g_pred,    goals_pkg.get('mae', 0.35) if goals_pkg else 0.35
-                best_market = 'nhl_goals'
-            elif best_prob == a_prob:
-                best_type, best_desc = 'Assists', 'Anytime Assist'
-                best_pred, best_mae  = a_pred,    assists_pkg.get('mae', 0.45) if assists_pkg else 0.45
-                best_market = 'nhl_assists'
+            # Look up sportsbook lines for this player
+            player_name_lower = str(sk.get('name', '')).strip().lower()
+            p_vegas = _vl.get(player_name_lower, {})
+
+            # Compute edge for each market using calc_prop_edge
+            def _edge_for(pred, mae, api_market_key):
+                vd = None
+                for mk, internal in _MKT_MAP.items():
+                    if internal == api_market_key and mk in p_vegas:
+                        vd = p_vegas[mk]
+                        break
+                # Also try direct key
+                if vd is None:
+                    vd = p_vegas.get(f'player_{api_market_key}', p_vegas.get(f'player_{api_market_key}s', None))
+                if vd is None:
+                    vd = p_vegas.get(f'player_shots_on_goal', None) if api_market_key == 'shots' else None
+                line = vd['line'] if vd else None
+                odds = vd['odds'] if vd else -110
+                book = vd['book'] if vd else None
+                mp, ip, ep, direction, vs = calc_prop_edge(pred, line, mae, odds)
+                return {
+                    'line': line, 'odds': odds, 'book': book,
+                    'model_prob': mp, 'implied_prob': ip,
+                    'edge_pct': ep, 'direction': direction, 'value_score': vs,
+                    'has_line': line is not None,
+                }
+
+            g_edge = _edge_for(g_pred, g_mae, 'goals')
+            a_edge = _edge_for(a_pred, a_mae, 'assists')
+            s_edge = _edge_for(s_pred, s_mae, 'shots')
+
+            # Pick best market by value_score (edge-aware) if we have lines; else by model_prob
+            markets = [
+                ('Goals', 'Anytime Goal Scorer', g_pred, g_mae, g_edge, 'nhl_goals'),
+                ('Assists', 'Anytime Assist', a_pred, a_mae, a_edge, 'nhl_assists'),
+                ('Shots', 'Shots on Goal', s_pred, s_mae, s_edge, 'nhl_shots'),
+            ]
+            any_has_line = any(m[4]['has_line'] for m in markets)
+            if any_has_line:
+                best = max(markets, key=lambda m: m[4]['value_score'] if m[4]['has_line'] else -1)
             else:
-                best_type, best_desc = 'Shots',   'Shots O3.5'
-                best_pred, best_mae  = s_pred,    s_mae
-                best_market = 'nhl_shots'
+                best = max(markets, key=lambda m: m[4]['model_prob'])
+            best_type, best_desc, best_pred, best_mae, best_edge, best_market = best
 
             props.append({
                 'player_id':    int(sk.get('player_id', 0)),
@@ -2224,23 +2272,45 @@ def _compute_game_props(home, away, player_models, skater_stats, team_stats):
                 'position':     pos,
                 'is_forward':   is_fwd,
                 'goals_pred':   g_pred,
-                'goals_prob':   g_prob,
-                'goals_mae':    goals_pkg.get('mae', 0.35) if goals_pkg else 0.35,
+                'goals_edge':   g_edge,
+                'goals_mae':    g_mae,
                 'assists_pred': a_pred,
-                'assists_prob': a_prob,
-                'assists_mae':  assists_pkg.get('mae', 0.45) if assists_pkg else 0.45,
+                'assists_edge': a_edge,
+                'assists_mae':  a_mae,
                 'shots_pred':   s_pred,
-                'shots_prob':   s_prob,
+                'shots_edge':   s_edge,
                 'shots_mae':    s_mae,
-                'best_prob':    best_prob,
+                'best_prob':    best_edge['model_prob'],
+                'best_edge_pct': best_edge['edge_pct'],
+                'best_value':   best_edge['value_score'],
                 'best_type':    best_type,
                 'best_desc':    best_desc,
                 'best_pred':    best_pred,
                 'best_mae':     best_mae,
                 'best_market':  best_market,
+                'best_line':    best_edge['line'],
+                'best_odds':    best_edge['odds'],
+                'best_book':    best_edge['book'],
+                'best_direction': best_edge['direction'],
+                'best_has_line': best_edge['has_line'],
             })
 
+    # Sort by value_score (edge-aware) if any lines available, else by model_prob
+    has_any_line = any(p['best_has_line'] for p in props)
+    if has_any_line:
+        return sorted(props, key=lambda p: (p['best_value'] if p['best_has_line'] else -1), reverse=True)
     return sorted(props, key=lambda p: p['best_prob'], reverse=True)
+
+
+def _signal_badge(edge_pct):
+    if edge_pct >= 0.04:
+        return "<span class='signal-badge signal-strong'>STRONG</span>"
+    elif edge_pct >= 0.02:
+        return "<span class='signal-badge signal-lean'>LEAN</span>"
+    elif edge_pct >= 0.01:
+        return "<span class='signal-badge signal-small'>SMALL</span>"
+    else:
+        return "<span class='signal-badge signal-pass'>PASS</span>"
 
 
 def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False, cb_key_override=None, game_date_label='', game_time_et=''):
@@ -2252,7 +2322,8 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
     in_sel = leg_id in sels
     cb_key = cb_key_override if cb_key_override is not None else f"nhl_rpl_g{game_idx}_{team}_{rank_i}"
 
-    cols = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+    # Columns: Pick | Player | Prop | Line | Pred | Edge% | Odds | Signal
+    cols = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
 
     checked = cols[0].checkbox("Select", value=in_sel, key=cb_key, label_visibility='collapsed')
 
@@ -2261,37 +2332,47 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
     cols[1].markdown(
         f"**{prefix}{name}** &nbsp;"
         f"<span style='background:{pos_color};color:#0f172a;border-radius:4px;"
-        f"padding:1px 5px;font-size:0.75em;font-weight:700'>{pos}</span>&nbsp;{team}"
-        f"<br><span style='color:#64748b;font-size:0.78em'>{away} @ {home}</span>",
+        f"padding:1px 5px;font-size:0.75em;font-weight:700'>{pos}</span>&nbsp;{team}",
         unsafe_allow_html=True,
     )
 
-    def _stat_html(pred, prob, is_best, decimal=2):
-        pct = prob * 100
-        c = '#22c55e' if pct >= 55 else '#eab308' if pct >= 40 else '#94a3b8'
-        star = "&nbsp;<span style='color:#f59e0b'>★</span>" if is_best else ""
-        return (
-            f"<span style='color:#f1f5f9'>{pred:.{decimal}f}</span>"
-            f"&nbsp;<span style='color:{c};font-size:0.85em'>P:&nbsp;{pct:.0f}%{star}</span>"
-        )
-
-    best_market = prop['best_market']
+    # Best prop type + direction
+    _dir = prop.get('best_direction', 'OVER')
+    _dir_color = '#22c55e' if _dir == 'OVER' else '#ef4444'
     cols[2].markdown(
-        _stat_html(prop['goals_pred'],   prop['goals_prob'],   best_market == 'nhl_goals',   decimal=2),
+        f"<span style='color:#f1f5f9'>{prop['best_type']}</span>"
+        f"<br><span style='color:{_dir_color};font-size:0.82em'>{_dir}</span>",
         unsafe_allow_html=True,
     )
-    cols[3].markdown(
-        _stat_html(prop['assists_pred'], prop['assists_prob'], best_market == 'nhl_assists', decimal=2),
-        unsafe_allow_html=True,
-    )
-    cols[4].markdown(
-        _stat_html(prop['shots_pred'],   prop['shots_prob'],   best_market == 'nhl_shots',   decimal=1),
-        unsafe_allow_html=True,
-    )
+
+    # Line (from sportsbook or "Model Only")
+    if prop.get('best_has_line'):
+        cols[3].markdown(f"<span style='color:#f1f5f9;font-weight:600'>{prop['best_line']}</span>", unsafe_allow_html=True)
+    else:
+        cols[3].markdown("<span style='color:#64748b;font-size:0.78em'>No line</span>", unsafe_allow_html=True)
+
+    # Prediction
+    cols[4].markdown(f"<span style='color:#f1f5f9'>{prop['best_pred']:.2f}</span>", unsafe_allow_html=True)
+
+    # Edge %
+    ep = prop.get('best_edge_pct', 0)
+    ep_color = '#22c55e' if ep >= 0.02 else '#eab308' if ep >= 0.01 else '#94a3b8'
+    if prop.get('best_has_line'):
+        cols[5].markdown(f"<span style='color:{ep_color};font-weight:600'>{ep*100:.1f}%</span>", unsafe_allow_html=True)
+    else:
+        cols[5].markdown("<span style='color:#64748b;font-size:0.78em'>—</span>", unsafe_allow_html=True)
+
+    # Odds
+    _odds = prop.get('best_odds', -110)
+    cols[6].markdown(f"<span style='color:#cbd5e1'>{_odds:+d}</span>", unsafe_allow_html=True)
+
+    # Signal badge
+    if prop.get('best_has_line'):
+        cols[7].markdown(_signal_badge(ep), unsafe_allow_html=True)
+    else:
+        cols[7].markdown("<span style='color:#64748b;font-size:0.78em'>Model</span>", unsafe_allow_html=True)
 
     if checked and not in_sel:
-        _implied = 110 / 210  # implied prob at -110 odds (52.4%)
-        _edge = round((prop['best_prob'] - _implied) * 100, 1)
         _nhl_rpl_add({
             'leg_id':           leg_id,
             'game_id':          f"{away}@{home}",
@@ -2301,17 +2382,18 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
             'home_team':        home,
             'away_team':        away,
             'bet_type':         'prop',
-            'description':      f"{name} — {prop['best_desc']} · {prop['best_pred']:.2f} {prop['best_type'].lower()}",
+            'description':      f"{name} — {prop['best_desc']} {_dir} · Pred {prop['best_pred']:.2f}",
             'confidence':       prop['best_prob'],
-            'direction':        'OVER',
-            'vegas_line':       None,
-            'odds':             -110,
+            'direction':        _dir,
+            'vegas_line':       prop.get('best_line'),
+            'odds':             _odds,
+            'book':             prop.get('best_book'),
             'market':           prop['best_market'],
             'player':           name,
             'prop_type':        prop['best_type'],
             'model_pred':       prop['best_pred'],
             'mae':              prop['best_mae'],
-            'edge':             _edge,
+            'edge':             round(ep * 100, 1),
         })
         st.rerun()
     elif not checked and in_sel:
@@ -2354,30 +2436,18 @@ def _render_tab_props(player_models, skater_stats, team_stats):
         st.info("📅 No NHL games today or tomorrow. Check back when lines open for upcoming games.")
         return
 
-    # ── Sportsbook selector + quota header ──────────────────────────────
-    from apis.odds import SPORTSBOOK_OPTIONS
-    sb_col, quota_col = st.columns([2, 3])
-    with sb_col:
-        _sb_labels = list(SPORTSBOOK_OPTIONS.keys())
-        _sb_idx = _sb_labels.index(st.session_state.get('edgeiq_sportsbook', 'DraftKings')) if st.session_state.get('edgeiq_sportsbook', 'DraftKings') in _sb_labels else 0
-        selected_book_label = st.selectbox(
-            "Your Sportsbook", _sb_labels, index=_sb_idx,
-            key="edgeiq_sportsbook",
-            help="Prop lines fetched from this book. Edge calculations use their prices.",
+    # ── Quota header ────────────────────────────────────────────────────
+    selected_book_label = st.session_state.get('edgeiq_sportsbook', 'DraftKings')
+    _q_used = st.session_state.get('odds_quota_used')
+    _q_rem = st.session_state.get('odds_quota_remaining')
+    if _q_used is not None and _q_rem is not None:
+        _q_total = _q_used + _q_rem
+        _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
+        st.markdown(
+            f"<div style='font-size:0.85rem;color:{_q_color}'>"
+            f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
+            unsafe_allow_html=True,
         )
-    with quota_col:
-        _q_used = st.session_state.get('odds_quota_used')
-        _q_rem = st.session_state.get('odds_quota_remaining')
-        if _q_used is not None and _q_rem is not None:
-            _q_total = _q_used + _q_rem
-            _q_color = '#f87171' if _q_rem < 50 else '#facc15' if _q_rem < 200 else '#94a3b8'
-            st.markdown(
-                f"<div style='margin-top:28px;font-size:0.85rem;color:{_q_color}'>"
-                f"API Credits: <strong>{_q_used}</strong> / {_q_total} used</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.caption("")  # spacer
 
     sels = st.session_state.get('nhl_rpl_selections', {})
     n_sels = len(sels)
@@ -2385,7 +2455,12 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     hdr_col, ctr_col = st.columns([4, 2])
     with hdr_col:
         st.subheader("🎯 NHL Player Props")
-        st.caption("Model-predicted goals · assists · shots on goal  ·  Today & tomorrow's games only  ·  Select legs to build a Parlay Ladder")
+        _has_vegas = bool(st.session_state.get('nhl_vegas_props'))
+        st.caption(
+            "Model predictions vs sportsbook lines  ·  Today & tomorrow  ·  Select legs for Parlay Ladder"
+            if _has_vegas else
+            "Model-only predictions  ·  Fetch prop lines below for edge analysis  ·  Today & tomorrow"
+        )
     with ctr_col:
         if n_sels > 0:
             badge_color = '#22c55e' if n_sels >= 3 else '#eab308'
@@ -2402,24 +2477,90 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     if n_sels >= 3:
         st.success("🪜 **3+ legs selected** — head to the **Parlay Ladder** tab to build your ladder.")
 
+    # ── Fetch Prop Lines button ───────────────────────────────────────────────
+    _fc1, _fc2 = st.columns([3, 5])
+    with _fc1:
+        _all_games = [g for games in schedule.values() for g in games]
+        _n_games = len(_all_games)
+        _est_credits = 1 + _n_games * 3  # 1 for events + 3 markets per game
+        _fetch_btn = st.button(
+            f"📡 Fetch Prop Lines (~{_est_credits} credits)",
+            key='nhl_fetch_props',
+            help=f"Fetches player prop lines from selected sportsbook for {_n_games} games. Cached 4 hours.",
+            use_container_width=True,
+        )
+    with _fc2:
+        if _has_vegas:
+            _vp_ts = st.session_state.get('nhl_vegas_props_ts', '')
+            _n_lines = sum(len(v) for v in st.session_state.get('nhl_vegas_props', {}).values())
+            st.markdown(
+                f"<div style='margin-top:6px;font-size:0.82rem;color:#22c55e'>"
+                f"✓ {_n_lines} lines loaded from {selected_book_label}"
+                f"{f' · {_vp_ts}' if _vp_ts else ''}</div>",
+                unsafe_allow_html=True,
+            )
+
+    if _fetch_btn:
+        from apis.odds import OddsClient, SPORTSBOOK_OPTIONS, NHL_SPORT_KEY
+        _book_key = SPORTSBOOK_OPTIONS.get(selected_book_label, 'draftkings')
+        _client = OddsClient()
+        _vegas_by_game = {}
+        with st.spinner(f"Fetching prop lines from {selected_book_label}…"):
+            _events = _client.get_nhl_events()
+            # Sync quota
+            if _client._last_used is not None:
+                st.session_state['odds_quota_used'] = _client._last_used
+                st.session_state['odds_quota_remaining'] = _client._last_remaining
+            # Match events to our schedule games
+            from apis.odds import NHL_NAME_TO_ABV
+            for ev in _events:
+                _h_abv = NHL_NAME_TO_ABV.get(ev.get('home_team', ''), '')
+                _a_abv = NHL_NAME_TO_ABV.get(ev.get('away_team', ''), '')
+                _game_key = f"{_a_abv}@{_h_abv}"
+                # Check this event is in our filtered schedule
+                _in_sched = False
+                for g in _all_games:
+                    if g['home_team'] == _h_abv and g['away_team'] == _a_abv:
+                        _in_sched = True
+                        break
+                if not _in_sched:
+                    continue
+                _props = _client.get_nhl_player_props(ev['id'], bookmakers=_book_key)
+                if _client._last_used is not None:
+                    st.session_state['odds_quota_used'] = _client._last_used
+                    st.session_state['odds_quota_remaining'] = _client._last_remaining
+                _vegas_by_game[_game_key] = _props
+        st.session_state['nhl_vegas_props'] = _vegas_by_game
+        st.session_state['nhl_vegas_props_ts'] = datetime.now().strftime('%I:%M %p')
+        # Force re-compute with new vegas data
+        st.session_state['nhl_props_precalc_done'] = False
+        st.session_state['nhl_props_autosel_done'] = False
+        for k in list(st.session_state.keys()):
+            if k.startswith('nhl_props_g'):
+                del st.session_state[k]
+        st.rerun()
+
     st.divider()
 
     # Pre-compute prop predictions (cached per session)
-    # Reset if the filtered game set changed (e.g. day boundary crossed)
     _n_prop_games = sum(len(g) for g in schedule.values())
     if st.session_state.get('_nhl_props_game_count') != _n_prop_games:
         st.session_state['nhl_props_precalc_done'] = False
         st.session_state['nhl_props_autosel_done'] = False
         st.session_state['_nhl_props_game_count'] = _n_prop_games
+    _vegas_data = st.session_state.get('nhl_vegas_props', {})
     if not st.session_state.get('nhl_props_precalc_done'):
         all_games = [g for games in schedule.values() for g in games]
         with st.spinner("Computing player prop predictions…"):
             for idx, game in enumerate(all_games):
                 key = f'nhl_props_g{idx}'
                 if key not in st.session_state:
+                    _gk = f"{game['away_team']}@{game['home_team']}"
+                    _gv = _vegas_data.get(_gk, None)
                     st.session_state[key] = _compute_game_props(
                         game['home_team'], game['away_team'],
                         player_models, skater_stats, team_stats,
+                        vegas_props=_gv,
                     )
         st.session_state['nhl_props_precalc_done'] = True
 
@@ -2432,17 +2573,21 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 all_props_flat.append((_gidx, _game, _p))
             _gidx += 1
 
-    top_picks = sorted(all_props_flat, key=lambda x: x[2]['best_prob'], reverse=True)[:10]
+    # Sort by value_score if we have sportsbook lines, else by model_prob
+    _has_any_line = any(p[2].get('best_has_line') for p in all_props_flat)
+    if _has_any_line:
+        top_picks = sorted(all_props_flat, key=lambda x: x[2].get('best_value', 0), reverse=True)[:10]
+    else:
+        top_picks = sorted(all_props_flat, key=lambda x: x[2]['best_prob'], reverse=True)[:10]
 
-    # Auto-select top 10 on first schedule load; user can uncheck what they don't want
+    # Auto-select top 10 on first load
     if not st.session_state.get('nhl_props_autosel_done') and top_picks:
-        _implied = 110 / 210
         for _gidx, _game_t, _prop_t in top_picks:
             _name = _prop_t['name']
             _home = _game_t['home_team']
             _away = _game_t['away_team']
             _lid = f"nhl_{_home}_{_away}_{_name.replace(' ', '_')}_{_prop_t['best_market']}"
-            _edge = round((_prop_t['best_prob'] - _implied) * 100, 1)
+            _dir = _prop_t.get('best_direction', 'OVER')
             _nhl_rpl_add({
                 'leg_id':           _lid,
                 'game_id':          f"{_away}@{_home}",
@@ -2452,17 +2597,18 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 'home_team':        _home,
                 'away_team':        _away,
                 'bet_type':         'prop',
-                'description':      f"{_name} — {_prop_t['best_desc']} · {_prop_t['best_pred']:.2f} {_prop_t['best_type'].lower()}",
+                'description':      f"{_name} — {_prop_t['best_desc']} {_dir} · Pred {_prop_t['best_pred']:.2f}",
                 'confidence':       _prop_t['best_prob'],
-                'direction':        'OVER',
-                'vegas_line':       None,
-                'odds':             -110,
+                'direction':        _dir,
+                'vegas_line':       _prop_t.get('best_line'),
+                'odds':             _prop_t.get('best_odds', -110),
+                'book':             _prop_t.get('best_book'),
                 'market':           _prop_t['best_market'],
                 'player':           _name,
                 'prop_type':        _prop_t['best_type'],
                 'model_pred':       _prop_t['best_pred'],
                 'mae':              _prop_t['best_mae'],
-                'edge':             _edge,
+                'edge':             round(_prop_t.get('best_edge_pct', 0) * 100, 1),
             })
         st.session_state['nhl_props_autosel_done'] = True
         st.rerun()
@@ -2474,13 +2620,17 @@ def _render_tab_props(player_models, skater_stats, team_stats):
 
     if top_picks:
         st.markdown("### 🏆 Top Picks")
-        st.caption("Top 10 highest-confidence props across today's slate — sorted by model probability")
-        hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+        _sort_label = "sorted by edge value" if _has_any_line else "sorted by model probability"
+        st.caption(f"Top 10 props across today's slate — {_sort_label}")
+        hc = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
         hc[0].caption("Pick")
         hc[1].caption("Player")
-        hc[2].caption("⚽ Goals  |  P%  (★ = best bet)")
-        hc[3].caption("🎯 Assists  |  P%")
-        hc[4].caption("🥅 Shots  |  P%")
+        hc[2].caption("Prop")
+        hc[3].caption("Line")
+        hc[4].caption("Pred")
+        hc[5].caption("Edge%")
+        hc[6].caption("Odds")
+        hc[7].caption("Signal")
         st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
         for ti, (gidx, game_t, prop_t) in enumerate(top_picks):
             _render_prop_row(prop_t, gidx, game_t['home_team'], game_t['away_team'], ti, sels,
@@ -2502,14 +2652,14 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 st.session_state[f'nhl_props_exp_{i}'] = False
             st.rerun()
 
-    # Sort game cards globally by highest best_prob in that game (descending)
+    # Sort game cards by highest value (or prob if no lines)
     _sorted_cards = []
     _ci = 0
     for _day, _games in schedule.items():
         for _game in _games:
             _p_list = st.session_state.get(f'nhl_props_g{_ci}', [])
-            _max_p = max((p['best_prob'] for p in _p_list), default=0)
-            _sorted_cards.append((_ci, _game, _max_p))
+            _max_v = max((p.get('best_value', p['best_prob']) for p in _p_list), default=0)
+            _sorted_cards.append((_ci, _game, _max_v))
             _ci += 1
     _sorted_cards.sort(key=lambda x: x[2], reverse=True)
 
@@ -2531,12 +2681,15 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 st.caption("No player data available for this matchup.")
                 continue
 
-            hc = st.columns([0.5, 2.5, 2.2, 2.0, 1.5])
+            hc = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
             hc[0].caption("Pick")
             hc[1].caption("Player")
-            hc[2].caption("⚽ Goals  |  P(scorer)")
-            hc[3].caption("🎯 Assists")
-            hc[4].caption("🥅 Shots")
+            hc[2].caption("Prop")
+            hc[3].caption("Line")
+            hc[4].caption("Pred")
+            hc[5].caption("Edge%")
+            hc[6].caption("Odds")
+            hc[7].caption("Signal")
             st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
 
             home_props = [p for p in props if p['team'] == home]
