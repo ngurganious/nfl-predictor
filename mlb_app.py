@@ -1856,17 +1856,14 @@ def render_mlb_app():
             except Exception:
                 pass
 
-    tab1, tab2, tab_props, tab_ladder, tab3 = st.tabs([
-        "⚾ Game Predictor", "📅 Backtesting",
-        "🏃 Player Props", "🪜 Parlay Ladder", "📋 Track Record",
+    tab1, tab_props, tab_ladder, tab_bt = st.tabs([
+        "⚾ Game Predictor", "🏃 Player Props",
+        "🪜 Parlay Ladder", "📅 Backtesting",
     ])
 
     with tab1:
         _render_tab1(model, features, accuracy, elo_ratings, pitcher_ratings, team_stats,
                      total_model_pkg, mlb_games, full_pitcher_ratings, mlb_client)
-
-    with tab2:
-        _render_tab2(model, features, accuracy)
 
     with tab_props:
         _render_tab_props(player_models, pitcher_season, batter_stats, team_stats)
@@ -1874,5 +1871,5 @@ def render_mlb_app():
     with tab_ladder:
         _render_tab_ladder()
 
-    with tab3:
-        _render_tab3()
+    with tab_bt:
+        _render_tab2(model, features, accuracy)

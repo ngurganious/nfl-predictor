@@ -2959,22 +2959,19 @@ def render_nhl_app():
         st.divider()
 
     # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🏒 Game Predictor", "📅 Backtesting",
-        "🎯 Player Props", "🪜 Parlay Ladder", "📋 Track Record",
+    tab1, tab_props, tab_ladder, tab_bt = st.tabs([
+        "🏒 Game Predictor", "🎯 Player Props",
+        "🪜 Parlay Ladder", "📅 Backtesting",
     ])
 
     with tab1:
         _render_tab1(model, features, accuracy, elo_ratings, goalie_ratings, team_stats, total_model_pkg, nhl_games, full_goalie_ratings=full_goalie_ratings)
 
-    with tab2:
-        _render_tab2(model, features, accuracy)
-
-    with tab3:
+    with tab_props:
         _render_tab_props(player_models, skater_stats, team_stats)
 
-    with tab4:
+    with tab_ladder:
         _render_tab_ladder_nhl()
 
-    with tab5:
-        _render_nhl_track_record()
+    with tab_bt:
+        _render_tab2(model, features, accuracy)
