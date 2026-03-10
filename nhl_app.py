@@ -725,6 +725,17 @@ def render_nhl_prediction_result(result: dict, prefix: str = "", game_date: str 
         f"Moneyline: {_ml_display}. Vegas implied: {_vegas_impl_k*100:.1f}%. {_caption_extra}"
     )
 
+    # ── Add to Parlay Tray ────────────────────────────────────────────────
+    _tray_ml_id = f"nhl_{home}_{away}_ml"
+    _in_tray = any(p.get('leg_id') == _tray_ml_id for p in st.session_state.get('parlay_tray', []))
+    _tray_lbl = "✓ In Parlay Tray" if _in_tray else "🎯 Add to Parlay Tray"
+    if st.button(_tray_lbl, key=f'{prefix}_tray_ml' if prefix else f'nhl_{home}_{away}_tray_ml'):
+        if _in_tray:
+            _nhl_tray_remove(_tray_ml_id)
+        else:
+            _nhl_tray_add(_tray_ml_id, _pick_label_k, f"ML {int(_pick_ml_k):+d}", int(_pick_ml_k))
+        st.rerun()
+
     # ── Log prediction to history (once per session per game) ────────────────
     if _PH_OK:
         _log_key = f'{prefix}_logged' if prefix else f'nhl_{home}_{away}_logged'
@@ -2143,6 +2154,18 @@ def _nhl_rpl_remove(leg_id):
     st.session_state['nhl_rpl_selections'] = sels
 
 
+def _nhl_tray_add(leg_id, player, bet, odds):
+    tray = st.session_state.get('parlay_tray', [])
+    if not any(p.get('leg_id') == leg_id for p in tray):
+        tray.append({'leg_id': leg_id, 'sport': 'NHL', 'sport_css': 'nhl', 'player': player, 'bet': bet, 'odds': int(odds)})
+        st.session_state['parlay_tray'] = tray
+
+
+def _nhl_tray_remove(leg_id):
+    tray = st.session_state.get('parlay_tray', [])
+    st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != leg_id]
+
+
 def _compute_game_props(home, away, player_models, skater_stats, team_stats, vegas_props=None):
     import math
     from apis.odds import calc_prop_edge
@@ -2395,9 +2418,11 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
             'mae':              prop['best_mae'],
             'edge':             round(ep * 100, 1),
         })
+        _nhl_tray_add(leg_id, name, f"{prop['best_type']} {_dir}", _odds)
         st.rerun()
     elif not checked and in_sel:
         _nhl_rpl_remove(leg_id)
+        _nhl_tray_remove(leg_id)
         st.rerun()
 
 
@@ -2844,7 +2869,7 @@ def render_nhl_app():
     # Back to Home button
     back_col, title_col = st.columns([1, 8])
     with back_col:
-        if st.button("🏠 Home", key="nhl_back_home"):
+        if st.button("← Sports", key="nhl_back_home"):
             st.session_state['sport'] = None
             st.rerun()
     with title_col:

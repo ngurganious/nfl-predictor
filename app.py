@@ -49,6 +49,8 @@ if 'show_acct_modal' not in st.session_state:
     st.session_state['show_acct_modal'] = False
 if 'edgeiq_sportsbook' not in st.session_state:
     st.session_state['edgeiq_sportsbook'] = 'DraftKings'
+if 'parlay_tray' not in st.session_state:
+    st.session_state['parlay_tray'] = []
 
 # ── Sportsbook options (display label → API key) ─────────────────────────────
 _SPORTSBOOK_LABELS = ["DraftKings", "FanDuel", "BetMGM", "Caesars", "PointsBet", "Bovada"]
@@ -498,6 +500,64 @@ def _render_home():
         st.info("Load a sport schedule to see today's highest probability picks across all sports.")
 
 
+# ── Parlay Tray (floating bottom bar + expanded sheet) ────────────────────────
+def _render_parlay_tray():
+    tray = st.session_state.get('parlay_tray', [])
+    if not tray:
+        return
+
+    count = len(tray)
+
+    def _combined_decimal(picks):
+        dec = 1.0
+        for p in picks:
+            odds = p.get('odds', -110)
+            if odds > 0:
+                dec *= 1 + odds / 100
+            else:
+                dec *= 1 + 100 / abs(odds)
+        return dec
+
+    combo_dec = _combined_decimal(tray)
+    if combo_dec >= 2.0:
+        combo_american = f"+{int(round((combo_dec - 1) * 100))}"
+    else:
+        combo_american = f"-{int(round(100 / (combo_dec - 1)))}"
+
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(f"### 🎯 Parlay Tray ({count})")
+        st.markdown(f"**Combo Odds: {combo_american}**")
+
+        pick_rows = ""
+        for i, p in enumerate(tray):
+            sport_css = p.get('sport_css', 'nfl')
+            odds = p.get('odds', -110)
+            pick_rows += f"""
+            <div class="parlay-tray-pick">
+                <div class="parlay-tray-pick-info">
+                    <span class="parlay-tray-pick-sport {sport_css}">{p.get('sport', 'NFL')}</span>
+                    <span class="parlay-tray-pick-name">{p.get('player', '?')}</span>
+                    <span class="parlay-tray-pick-bet">{p.get('bet', '')}</span>
+                </div>
+                <span class="parlay-tray-pick-odds">{odds:+d}</span>
+            </div>"""
+        st.markdown(f'<div style="margin:8px 0">{pick_rows}</div>', unsafe_allow_html=True)
+
+        # Remove individual picks
+        _remove_id = None
+        for i, p in enumerate(tray):
+            if st.button(f"✕ {p.get('player', '?')} — {p.get('bet', '')}", key=f"tray_rm_{i}"):
+                _remove_id = p.get('leg_id')
+        if _remove_id:
+            st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != _remove_id]
+            st.rerun()
+
+        if st.button("Clear All", key="parlay_tray_clear"):
+            st.session_state['parlay_tray'] = []
+            st.rerun()
+
+
 # ── Router ────────────────────────────────────────────────────────────────────
 _render_header()
 
@@ -536,3 +596,6 @@ elif sport == 'mlb':
         if st.button("Return to Home", key="mlb_err_home"):
             st.session_state['sport'] = None
             st.rerun()
+
+# ── Parlay Tray (render last so it floats at bottom) ─────────────────────────
+_render_parlay_tray()

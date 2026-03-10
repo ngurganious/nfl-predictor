@@ -461,7 +461,7 @@ def render_nfl_app():
     # ── Back to Home ──────────────────────────────────
     _back_col, _title_col = st.columns([1, 8])
     with _back_col:
-        if st.button("🏠 Home", key="nfl_back_home"):
+        if st.button("← Sports", key="nfl_back_home"):
             st.session_state['sport'] = None
             st.rerun()
     with _title_col:
@@ -579,6 +579,16 @@ def render_nfl_app():
     def _rpl_remove_selection(leg_id):
         sels = st.session_state.get('rpl_selections', {})
         sels.pop(leg_id, None)
+
+    def _tray_add(leg_id, player, bet, odds):
+        tray = st.session_state.get('parlay_tray', [])
+        if not any(p.get('leg_id') == leg_id for p in tray):
+            tray.append({'leg_id': leg_id, 'sport': 'NFL', 'sport_css': 'nfl', 'player': player, 'bet': bet, 'odds': int(odds)})
+            st.session_state['parlay_tray'] = tray
+
+    def _tray_remove(leg_id):
+        tray = st.session_state.get('parlay_tray', [])
+        st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != leg_id]
 
     # ══════════════════════════════════════════════════
     # WEEKLY SCHEDULE HELPERS  (used by Tab 1)
@@ -993,6 +1003,17 @@ def render_nfl_app():
             f"Betting on **{_pick_label_k}** at {_pick_prob_k*100:.1f}% model confidence. "
             f"Vegas implied: {_vegas_impl_k*100:.1f}%. {_caption_extra}"
         )
+
+        # ── Add to Parlay Tray ────────────────────────────────────────────────
+        _tray_ml_id = f"nfl_{home_team}_{away_team}_ml"
+        _in_tray = any(p.get('leg_id') == _tray_ml_id for p in st.session_state.get('parlay_tray', []))
+        _tray_lbl = "✓ In Parlay Tray" if _in_tray else "🎯 Add to Parlay Tray"
+        if st.button(_tray_lbl, key=f'{pfx}_tray_ml'):
+            if _in_tray:
+                _tray_remove(_tray_ml_id)
+            else:
+                _tray_add(_tray_ml_id, _pick_label_k, f"ML {int(_pick_ml_k):+d}", int(_pick_ml_k))
+            st.rerun()
 
         # ── Log prediction to history (once per session per game) ────────────
         if _PH_OK:
@@ -2385,9 +2406,11 @@ def render_nfl_app():
                                     'mae': _item3['mae'],
                                     'edge': _item3['edge'],
                                 })
+                                _tray_add(_lid3, _item3['player'], f"{_item3['prop_type']} {_item3['direction']} {_vl_str3}", _item3.get('odds', -110))
                                 st.rerun()
                             elif not _chk3 and _in_sel3:
                                 _rpl_remove_selection(_lid3)
+                                _tray_remove(_lid3)
                                 st.rerun()
                         else:
                             _c3 = st.columns([0.5, 3, 1.5, 1.5, 1])
@@ -2405,9 +2428,11 @@ def render_nfl_app():
                                 st.write(_os3)
                             if _chk3 and not _in_sel3:
                                 _rpl_add_selection(_item3)
+                                _tray_add(_lid3, _item3.get('player', _item3.get('description', '?')), f"ML {_item3['odds']:+d}", _item3['odds'])
                                 st.rerun()
                             elif not _chk3 and _in_sel3:
                                 _rpl_remove_selection(_lid3)
+                                _tray_remove(_lid3)
                                 st.rerun()
                     st.divider()
 
@@ -2505,9 +2530,11 @@ def render_nfl_app():
                                             'edge': _prop['edge'],
                                         }
                                         _rpl_add_selection(_prop_leg)
+                                        _tray_add(_lid, _prop['player'], f"{_prop['prop_type']} {_prop['direction']} {_vl_str}", _prop.get('odds', -110))
                                         st.rerun()
                                     elif not _checked and _in_sel:
                                         _rpl_remove_selection(_lid)
+                                        _tray_remove(_lid)
                                         st.rerun()
                             else:
                                 st.caption("No prop predictions available for this game")

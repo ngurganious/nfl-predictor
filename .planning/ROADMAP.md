@@ -126,8 +126,8 @@
 | 7 | Parlay tray session state — add `parlay_tray` + `parlay_tray_open` | `app.py` | ✅ Done — 2026-03-09 · Added `parlay_tray` (list) + `parlay_tray_open` (bool) to session state init |
 | 8 | Floating tray UI — collapsed bar + expanded bottom sheet | `app.py`, `assets/style.css` | ✅ Done — 2026-03-09 · Fixed-position bar + expanded sheet with pick list, combo odds, toggle/clear buttons |
 | 9 | Tab restructure — remove Track Record + Super Bowl, reorder tabs | `final_app.py`, `nhl_app.py`, `mlb_app.py` | ✅ Done — 2026-03-09 · Removed Super Bowl + Track Record tabs, reordered: Predictor → Props → Ladder → Backtesting (+ H2H for NFL) |
-| 10 | Back navigation — "← Sports" button on all sport views | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
-| 11 | "Add to Parlay Tray" buttons — wire Game Prediction + Props to tray | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
+| 10 | Back navigation — "← Sports" button on all sport views | `final_app.py`, `nhl_app.py`, `mlb_app.py` | ✅ Done — 2026-03-09 · Standardized "← Sports" button at top-left of all 3 sport views with columns layout; moved MLB from sidebar to main header |
+| 11 | "Add to Parlay Tray" buttons — wire Game Prediction + Props to tray | `final_app.py`, `nhl_app.py`, `mlb_app.py` | ✅ Done — 2026-03-09 · Game prediction cards get toggle "Add/Remove Parlay Tray" button (ML pick); all prop checkboxes also sync to cross-sport parlay tray |
 | 12 | Cross-sport ladder header — multi-sport parlay detection | `final_app.py`, `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
 | 13 | Head-to-Head tab — add to NHL and MLB (already exists in NFL) | `nhl_app.py`, `mlb_app.py` | 🔲 Not Started |
 

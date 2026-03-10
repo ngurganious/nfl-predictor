@@ -564,6 +564,17 @@ def render_mlb_prediction_result(result: dict, prefix: str = "", game_date: str 
         f"Moneyline: {_ml_display}. Vegas implied: {_vegas_impl*100:.1f}%. {_caption_extra}"
     )
 
+    # ── Add to Parlay Tray ────────────────────────────────────────────────
+    _tray_ml_id = f"mlb_{home}_{away}_ml"
+    _in_tray = any(p.get('leg_id') == _tray_ml_id for p in st.session_state.get('parlay_tray', []))
+    _tray_lbl = "✓ In Parlay Tray" if _in_tray else "🎯 Add to Parlay Tray"
+    if st.button(_tray_lbl, key=f'{prefix}_tray_ml' if prefix else f'mlb_{home}_{away}_tray_ml'):
+        if _in_tray:
+            _mlb_tray_remove(_tray_ml_id)
+        else:
+            _mlb_tray_add(_tray_ml_id, _pick_label, f"ML {int(_pick_ml):+d}", int(_pick_ml))
+        st.rerun()
+
     # ── Log prediction history ─────────────────────────────────────────────────
     if _PH_OK:
         _log_key = f'{prefix}_logged' if prefix else f'mlb_{home}_{away}_logged'
@@ -1339,6 +1350,18 @@ def _mlb_rpl_remove(leg_id: str):
     st.session_state['mlb_rpl_selections'] = sels
 
 
+def _mlb_tray_add(leg_id, player, bet, odds):
+    tray = st.session_state.get('parlay_tray', [])
+    if not any(p.get('leg_id') == leg_id for p in tray):
+        tray.append({'leg_id': leg_id, 'sport': 'MLB', 'sport_css': 'mlb', 'player': player, 'bet': bet, 'odds': int(odds)})
+        st.session_state['parlay_tray'] = tray
+
+
+def _mlb_tray_remove(leg_id):
+    tray = st.session_state.get('parlay_tray', [])
+    st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != leg_id]
+
+
 # ── Player Props tab (item 31) ─────────────────────────────────────────────────
 
 def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
@@ -1548,9 +1571,11 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                     'model_pred': _p2['prediction'], 'mae': _p2['mae'],
                     'edge': _p2['edge'],
                 })
+                _mlb_tray_add(_lid2, _p2['player'], f"{_p2['prop_type']} OVER", -110)
                 st.rerun()
             elif not _chk2 and _in_sel2:
                 _mlb_rpl_remove(_lid2)
+                _mlb_tray_remove(_lid2)
                 st.rerun()
         st.divider()
 
@@ -1618,9 +1643,11 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                                 'model_pred': _prop['prediction'], 'mae': _prop['mae'],
                                 'edge': _prop['edge'],
                             })
+                            _mlb_tray_add(_lid, _prop['player'], f"{_prop['prop_type']} OVER", -110)
                             st.rerun()
                         elif not _checked and _in_sel:
                             _mlb_rpl_remove(_lid)
+                            _mlb_tray_remove(_lid)
                             st.rerun()
 
                 if _bat_props:
@@ -1659,9 +1686,11 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                                 'model_pred': _prop['prediction'], 'mae': _prop['mae'],
                                 'edge': _prop['edge'],
                             })
+                            _mlb_tray_add(_lid, _prop['player'], f"{_prop['prop_type']} OVER", -110)
                             st.rerun()
                         elif not _checked and _in_sel:
                             _mlb_rpl_remove(_lid)
+                            _mlb_tray_remove(_lid)
                             st.rerun()
 
             _g_idx += 1
@@ -1807,13 +1836,14 @@ def render_mlb_app():
             st.number_input("Fixed bet ($)", min_value=5, max_value=int(bankroll),
                             value=50, step=5, key="mlb_fixed_dollar")
 
-        st.markdown("---")
-        if st.button("🏠 Back to Home", key="mlb_back_home"):
+    # ── Back to Home ──────────────────────────────────
+    _back_col, _title_col = st.columns([1, 8])
+    with _back_col:
+        if st.button("← Sports", key="mlb_back_home"):
             st.session_state['sport'] = None
             st.rerun()
-
-
-    st.title("⚾ MLB Predictor")
+    with _title_col:
+        st.markdown('<div class="edgeiq-logo"><span class="edgeiq-icon">⚡</span> MLB Terminal</div>', unsafe_allow_html=True)
 
     # Load models and data
     model, features, accuracy, elo_ratings = load_mlb_model()
