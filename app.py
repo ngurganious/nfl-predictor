@@ -524,11 +524,8 @@ def _render_parlay_tray():
     else:
         combo_american = f"-{int(round(100 / (combo_dec - 1)))}"
 
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown(f"### 🎯 Parlay Tray ({count})")
-        st.markdown(f"**Combo Odds: {combo_american}**")
-
+    st.markdown("---")
+    with st.expander(f"🎯 Parlay Tray — {count} leg{'s' if count != 1 else ''} · Combo: {combo_american}", expanded=False):
         pick_rows = ""
         for i, p in enumerate(tray):
             sport_css = p.get('sport_css', 'nfl')
@@ -547,14 +544,13 @@ def _render_parlay_tray():
         # Remove individual picks
         _remove_id = None
         for i, p in enumerate(tray):
-            if st.button(f"✕ {p.get('player', '?')} — {p.get('bet', '')}", key=f"tray_rm_{i}"):
+            if st.button(f"✕ Remove {p.get('player', '?')} — {p.get('bet', '')}", key=f"tray_rm_{i}"):
                 _remove_id = p.get('leg_id')
+        if st.button("🗑 Clear All", key="parlay_tray_clear"):
+            st.session_state['parlay_tray'] = []
+            st.rerun()
         if _remove_id:
             st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != _remove_id]
-            st.rerun()
-
-        if st.button("Clear All", key="parlay_tray_clear"):
-            st.session_state['parlay_tray'] = []
             st.rerun()
 
 
