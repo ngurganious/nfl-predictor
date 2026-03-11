@@ -1390,7 +1390,30 @@ def render_nfl_app():
         "📅 Backtesting",
         "📈 Head-to-Head",
     ])
-    
+
+    if st.session_state.pop('ladder_from_tray', False):
+        import streamlit.components.v1 as _c
+        _c.html("""<script>
+        (function() {
+            function clickTab() {
+                var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+                for (var i = 0; i < tabs.length; i++) {
+                    if (tabs[i].textContent.indexOf('Parlay Ladder') !== -1) {
+                        tabs[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+            if (!clickTab()) {
+                var attempts = 0;
+                var iv = setInterval(function() {
+                    if (clickTab() || ++attempts > 30) clearInterval(iv);
+                }, 150);
+            }
+        })();
+        </script>""", height=0)
+
     def _render_manual_entry_tab():
         """Original manual game-entry form (preserved as-is for Manual Entry mode)."""
         st.caption("Pre-populated with likely starters — swap anyone out to see how it affects the prediction")
@@ -2717,107 +2740,107 @@ def render_nfl_app():
 
         import parlay_math as _pm
 
-        _tray = st.session_state.get('parlay_tray', [])
+        legs = st.session_state.get('parlay_tray', [])
 
-        if len(_tray) < 3:
+        if len(legs) < 3:
             st.info(
-                f"Add at least **3** picks from **Props** or **Top Picks** to build your ladder. "
-                f"Currently selected: **{len(_tray)}** legs."
+                "✋ Add at least 3 picks from Player Props or Top Picks to build your ladder. "
+                "Use the checkboxes on any props page or the homepage Top Picks table."
             )
+            st.stop()
+        _legs = sorted(legs, key=lambda l: l.get('confidence', 0), reverse=True)
+
+        _bankroll = int(st.session_state.get('bankroll', 1000))
+        _max_exp = int(_bankroll * 0.25)
+        _ladder_budget = st.slider(
+            "Total Ladder Stake ($)",
+            min_value=10, max_value=max(10, _max_exp),
+            value=min(50, max(10, _max_exp)),
+            step=5, key='rpl_ladder_budget',
+            help=f"25% max daily exposure cap: ${_max_exp}"
+        )
+
+        _legs_json = json.dumps(_legs, sort_keys=True, default=str)
+        _corr_flags, _tier_results = _cached_ladder_compute(_legs_json, _ladder_budget)
+
+        # ── Summary metrics ───────────────────────────────────────
+        _n_games = len(set(l.get('game_label', l.get('game', '')) for l in legs))
+        _max_payout = sum(t.get('payout', 0) for t in _tier_results)
+        _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
+        _be_ok = _banker_payout >= _ladder_budget
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Legs", f"{len(_legs)}", f"{len(_tier_results)} Tiers")
+        c2.metric("Total Stake", f"${_ladder_budget}", f"Bankroll: ${_bankroll:,}")
+        _roi_pct = ((_max_payout - _ladder_budget) / _ladder_budget * 100) if _ladder_budget > 0 else 0
+        c3.metric("Max Payout", f"${_max_payout:.0f}", f"+{_roi_pct:.0f}% ROI")
+        if _be_ok:
+            c4.markdown('<div class="signal-badge signal-lock">\u2705 BANKER COVERS COST</div>', unsafe_allow_html=True)
         else:
-            _legs = sorted(_tray, key=lambda l: l.get('confidence', 0), reverse=True)
+            _short = _ladder_budget - _banker_payout
+            c4.markdown(f'<div class="signal-badge signal-lean">\u26a0\ufe0f BANKER SHORT ${_short:.0f}</div>', unsafe_allow_html=True)
 
-            _bankroll = int(st.session_state.get('bankroll', 1000))
-            _max_exp = int(_bankroll * 0.25)
-            _ladder_budget = st.slider(
-                "Total Ladder Stake ($)",
-                min_value=10, max_value=max(10, _max_exp),
-                value=min(50, max(10, _max_exp)),
-                step=5, key='rpl_ladder_budget',
-                help=f"25% max daily exposure cap: ${_max_exp}"
-            )
+        # Correlation flags
+        if _corr_flags:
+            with st.expander(f"\u26a0\ufe0f {len(_corr_flags)} Correlation Flags", expanded=False):
+                for _fl in _corr_flags:
+                    st.warning(_fl['message'])
 
-            _legs_json = json.dumps(_legs, sort_keys=True, default=str)
-            _corr_flags, _tier_results = _cached_ladder_compute(_legs_json, _ladder_budget)
+        st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
+        st.divider()
 
-            # ── Summary metrics ───────────────────────────────────────
-            _n_games = len(set(l.get('game_label', l.get('game', '')) for l in _tray))
-            _max_payout = sum(t.get('payout', 0) for t in _tier_results)
-            _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
-            _be_ok = _banker_payout >= _ladder_budget
+        # ── Tier sections ─────────────────────────────────────────────
+        _TIER_EMOJI = ['\U0001f3e6', '\U0001f4c8', '\U0001f680', '\U0001f319']
+        for i, tier in enumerate(_tier_results):
+            with st.container(border=True):
+                _emoji = _TIER_EMOJI[i] if i < len(_TIER_EMOJI) else '\U0001f3af'
+                _n = tier.get('n_legs', len(tier.get('legs', [])))
+                _am = tier.get('combined_american', 0)
+                _am_str = f"+{_am}" if _am > 0 else str(_am)
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Legs", f"{len(_legs)}", f"{len(_tier_results)} Tiers")
-            c2.metric("Total Stake", f"${_ladder_budget}", f"Bankroll: ${_bankroll:,}")
-            _roi_pct = ((_max_payout - _ladder_budget) / _ladder_budget * 100) if _ladder_budget > 0 else 0
-            c3.metric("Max Payout", f"${_max_payout:.0f}", f"+{_roi_pct:.0f}% ROI")
-            if _be_ok:
-                c4.markdown('<div class="signal-badge signal-lock">\u2705 BANKER COVERS COST</div>', unsafe_allow_html=True)
-            else:
-                _short = _ladder_budget - _banker_payout
-                c4.markdown(f'<div class="signal-badge signal-lean">\u26a0\ufe0f BANKER SHORT ${_short:.0f}</div>', unsafe_allow_html=True)
-
-            # Correlation flags
-            if _corr_flags:
-                with st.expander(f"\u26a0\ufe0f {len(_corr_flags)} Correlation Flags", expanded=False):
-                    for _fl in _corr_flags:
-                        st.warning(_fl['message'])
-
-            st.caption("*The Banker keeps you in the game while waiting for the Moonshot hit.*")
-            st.divider()
-
-            # ── Tier sections ─────────────────────────────────────────────
-            _TIER_EMOJI = ['\U0001f3e6', '\U0001f4c8', '\U0001f680', '\U0001f319']
-            for i, tier in enumerate(_tier_results):
-                with st.container(border=True):
-                    _emoji = _TIER_EMOJI[i] if i < len(_TIER_EMOJI) else '\U0001f3af'
-                    _n = tier.get('n_legs', len(tier.get('legs', [])))
-                    _am = tier.get('combined_american', 0)
-                    _am_str = f"+{_am}" if _am > 0 else str(_am)
-
-                    h1, h2 = st.columns([3, 1])
-                    with h1:
-                        st.markdown(
-                            f"**Tier {i+1}: {tier['name']}** "
-                            f"<span style='color:#94a3b8'>\u2014 {tier.get('subtitle','')} \u00b7 {_n} Legs</span>",
-                            unsafe_allow_html=True
-                        )
-                    with h2:
-                        st.markdown(
-                            f"<div style='text-align:right; font-family:JetBrains Mono; font-weight:bold; color:#22d3ee; font-size:1.2em'>{_am_str}</div>",
-                            unsafe_allow_html=True
-                        )
-
-                    # Combined probability
-                    _cp = tier.get('combined_prob', 0)
-                    _cp_color = '#22c55e' if _cp > 0.3 else '#eab308' if _cp > 0.1 else '#ef4444'
+                h1, h2 = st.columns([3, 1])
+                with h1:
                     st.markdown(
-                        f"<div style='font-size:1.1em;font-weight:600;color:{_cp_color}'>Combined Probability: {_cp*100:.1f}%</div>",
+                        f"**Tier {i+1}: {tier['name']}** "
+                        f"<span style='color:#94a3b8'>\u2014 {tier.get('subtitle','')} \u00b7 {_n} Legs</span>",
+                        unsafe_allow_html=True
+                    )
+                with h2:
+                    st.markdown(
+                        f"<div style='text-align:right; font-family:JetBrains Mono; font-weight:bold; color:#22d3ee; font-size:1.2em'>{_am_str}</div>",
                         unsafe_allow_html=True
                     )
 
-                    # Leg details
-                    for leg in tier.get('legs', []):
-                        _desc = leg.get('description', leg.get('bet', ''))
-                        _conf = leg.get('confidence', 0)
-                        _edge = leg.get('edge', 0)
-                        _badge_cls = 'signal-lock' if _conf >= 0.75 else 'signal-strong' if _conf >= 0.65 else 'signal-lean' if _conf >= 0.55 else 'signal-pass'
-                        _sport_lbl = leg.get('sport', 'NFL')
-                        _sport_css = leg.get('sport_css', 'nfl')
-                        _sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
-                        _sc = _sport_colors.get(_sport_css, '#94a3b8')
-                        _sbadge = (f"<span style='background:{_sc};color:#0f172a;border-radius:4px;"
-                                   f"padding:1px 5px;font-size:0.7em;font-weight:700'>{_sport_lbl}</span> ")
-                        l1, l2, l3 = st.columns([4, 2, 2])
-                        l1.markdown(f"{_sbadge}{_desc}", unsafe_allow_html=True)
-                        l2.markdown(f"<span class='signal-badge {_badge_cls}'>Edge {_edge:+.1f}</span>", unsafe_allow_html=True)
-                        l3.caption(f"Prob: {_conf*100:.1f}%")
+                # Combined probability
+                _cp = tier.get('combined_prob', 0)
+                _cp_color = '#22c55e' if _cp > 0.3 else '#eab308' if _cp > 0.1 else '#ef4444'
+                st.markdown(
+                    f"<div style='font-size:1.1em;font-weight:600;color:{_cp_color}'>Combined Probability: {_cp*100:.1f}%</div>",
+                    unsafe_allow_html=True
+                )
 
-                    st.divider()
-                    f1, f2, f3 = st.columns([2, 2, 2])
-                    f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
-                    f2.metric("Potential Payout", f"${tier.get('payout', 0):.2f}")
-                    f3.metric("Implied Prob", f"{_cp*100:.1f}%")
+                # Leg details
+                for leg in tier.get('legs', []):
+                    _desc = leg.get('description', leg.get('bet', ''))
+                    _conf = leg.get('confidence', 0)
+                    _edge = leg.get('edge', 0)
+                    _badge_cls = 'signal-lock' if _conf >= 0.75 else 'signal-strong' if _conf >= 0.65 else 'signal-lean' if _conf >= 0.55 else 'signal-pass'
+                    _sport_lbl = leg.get('sport', 'NFL')
+                    _sport_css = leg.get('sport_css', 'nfl')
+                    _sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
+                    _sc = _sport_colors.get(_sport_css, '#94a3b8')
+                    _sbadge = (f"<span style='background:{_sc};color:#0f172a;border-radius:4px;"
+                               f"padding:1px 5px;font-size:0.7em;font-weight:700'>{_sport_lbl}</span> ")
+                    l1, l2, l3 = st.columns([4, 2, 2])
+                    l1.markdown(f"{_sbadge}{_desc}", unsafe_allow_html=True)
+                    l2.markdown(f"<span class='signal-badge {_badge_cls}'>Edge {_edge:+.1f}</span>", unsafe_allow_html=True)
+                    l3.caption(f"Prob: {_conf*100:.1f}%")
+
+                st.divider()
+                f1, f2, f3 = st.columns([2, 2, 2])
+                f1.metric("Tier Stake", f"${tier.get('stake', 0):.2f}")
+                f2.metric("Potential Payout", f"${tier.get('payout', 0):.2f}")
+                f3.metric("Implied Prob", f"{_cp*100:.1f}%")
 
         # ── Historical Ladder Performance ──────────────────
         st.divider()

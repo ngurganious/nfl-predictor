@@ -1723,8 +1723,8 @@ def _render_tab_ladder():
 
     if len(_tray) < 3:
         st.info(
-            f"Add at least **3** picks from **Props** or **Top Picks** to build your ladder. "
-            f"Currently selected: **{len(_tray)}** legs."
+            "✋ Add at least 3 picks from Player Props or Top Picks to build your ladder. "
+            "Use the checkboxes on any props page or the homepage Top Picks table."
         )
         return
 
@@ -1910,6 +1910,29 @@ def render_mlb_app():
         "⚾ Game Predictor", "🏃 Player Props",
         "🪜 Parlay Ladder", "📅 Backtesting",
     ])
+
+    if st.session_state.pop('ladder_from_tray', False):
+        import streamlit.components.v1 as _c
+        _c.html("""<script>
+        (function() {
+            function clickTab() {
+                var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+                for (var i = 0; i < tabs.length; i++) {
+                    if (tabs[i].textContent.indexOf('Parlay Ladder') !== -1) {
+                        tabs[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+            if (!clickTab()) {
+                var attempts = 0;
+                var iv = setInterval(function() {
+                    if (clickTab() || ++attempts > 30) clearInterval(iv);
+                }, 150);
+            }
+        })();
+        </script>""", height=0)
 
     with tab1:
         _render_tab1(model, features, accuracy, elo_ratings, pitcher_ratings, team_stats,

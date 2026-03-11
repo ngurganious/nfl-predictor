@@ -72,10 +72,9 @@ _tray_build = st.query_params.get('tray_build')
 if _tray_build:
     tray = st.session_state.get('parlay_tray', [])
     if tray:
-        from collections import Counter
-        _sport_counts = Counter(l.get('sport_css', 'nhl') for l in tray)
-        _majority_sport = _sport_counts.most_common(1)[0][0]
-        st.session_state['sport'] = _majority_sport
+        first_sport = tray[0].get('sport_css', 'nhl')
+        st.session_state['sport'] = first_sport
+        st.session_state['parlay_tray_open'] = False
         st.session_state['ladder_from_tray'] = True
     st.query_params.clear()
     st.rerun()
