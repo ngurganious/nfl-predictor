@@ -15,6 +15,8 @@ Mirrors nhl_app.py / final_app.py structure.
 import os
 import pickle
 import logging
+import time
+import json
 import warnings
 from datetime import datetime, date
 
@@ -149,7 +151,7 @@ def load_mlb_team_stats():
         return pd.DataFrame()
 
 
-@st.cache_data
+@st.cache_resource
 def load_mlb_player_models():
     """Load 4 GBR prop models from model_mlb_player.pkl."""
     try:
@@ -200,6 +202,15 @@ def load_mlb_historical_features():
         logger.error(f"MLB feature engineering failed: {e}")
         return games, []
 
+
+@st.cache_data
+def _cached_mlb_ladder_compute(_legs_json, _budget):
+    import parlay_math as _pm
+    _legs = json.loads(_legs_json)
+    _corr = _pm.check_correlations(_legs)
+    _tiers = _pm.optimize_tiers(_legs, _budget)
+    _results = _pm.compute_stakes(_tiers, _budget)
+    return _corr, _results
 
 # ── ELO helpers ───────────────────────────────────────────────────────────────
 
@@ -1427,7 +1438,11 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
         return
 
     # Pre-calculate props for all games
-    if 'mlb_props_precalc_done' not in st.session_state:
+    _props_age = time.time() - st.session_state.get('mlb_props_ts', 0)
+    if _props_age > 300:
+        for _k in list(st.session_state.keys()):
+            if _k.startswith('mlb_props_g'):
+                del st.session_state[_k]
         with st.spinner("Pre-calculating player props for all games..."):
             _g_idx = 0
             for _day, _day_games in schedule.items():
@@ -1511,6 +1526,7 @@ def _render_tab_props(player_models: dict, pitcher_season: pd.DataFrame,
                     st.session_state[f'mlb_props_g{_g_idx}'] = _props
                     _g_idx += 1
         st.session_state['mlb_props_precalc_done'] = True
+        st.session_state['mlb_props_ts'] = time.time()
 
     # ── Top Picks ──────────────────────────────────────────────────────────────
     _all_props_flat = []
@@ -1714,7 +1730,6 @@ def _render_tab_ladder():
         return
 
     _legs = sorted(_sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
-    _corr_flags = _pm.check_correlations(_legs)
 
     _bankroll = int(st.session_state.get('mlb_bankroll', 1000))
     _max_exp  = int(_bankroll * 0.25)
@@ -1726,8 +1741,8 @@ def _render_tab_ladder():
         help=f"25% max daily exposure cap: ${_max_exp}",
     )
 
-    _tiers       = _pm.optimize_tiers(_legs, _ladder_budget)
-    _tier_results = _pm.compute_stakes(_tiers, _ladder_budget)
+    _legs_json = json.dumps(_legs, sort_keys=True, default=str)
+    _corr_flags, _tier_results = _cached_mlb_ladder_compute(_legs_json, _ladder_budget)
 
     _max_payout    = sum(t.get('payout', 0) for t in _tier_results)
     _banker_payout = _tier_results[0]['payout'] if _tier_results else 0

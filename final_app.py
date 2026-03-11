@@ -7,6 +7,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import time
+import json
 import warnings
 from datetime import datetime, date
 warnings.filterwarnings('ignore')
@@ -266,6 +268,15 @@ def get_opp_rush_defense(team, def_rush_df, current_season=2024):
         except KeyError:
             continue
     return defaults
+
+@st.cache_data
+def _cached_ladder_compute(_legs_json, _budget):
+    import parlay_math as _pm
+    _legs = json.loads(_legs_json)
+    _corr = _pm.check_correlations(_legs)
+    _tiers = _pm.optimize_tiers(_legs, _budget)
+    _results = _pm.compute_stakes(_tiers, _budget)
+    return _corr, _results
 
 @st.cache_data
 def load_data():
@@ -2168,7 +2179,11 @@ def render_nfl_app():
                 st.divider()
 
                 # Pre-calculate props for all games
-                if 'rpl_props_precalc_done' not in st.session_state:
+                _props_age = time.time() - st.session_state.get('rpl_props_ts', 0)
+                if _props_age > 300:
+                    for _k in list(st.session_state.keys()):
+                        if _k.startswith('rpl_g') and _k.endswith('_game_bets'):
+                            del st.session_state[_k]
                     _vegas_props = st.session_state.get('rpl_vegas_props', {})
                     _g_idx = 0
                     with st.spinner("Pre-calculating player props for all games..."):
@@ -2337,6 +2352,7 @@ def render_nfl_app():
                                 st.session_state[f'rpl_g{_g_idx}_game_bets'] = _game_bets
                                 _g_idx += 1
                     st.session_state['rpl_props_precalc_done'] = True
+                    st.session_state['rpl_props_ts'] = time.time()
 
                 # ── Top Picks ──────────────────────────────────────────────
                 _nfl_all_legs_flat = []
@@ -2711,7 +2727,6 @@ def render_nfl_app():
             st.caption("Go to the Player Props tab → This Week's Props → expand game cards → toggle checkboxes.")
         else:
             _legs = sorted(_rpl_sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
-            _corr_flags = _pm.check_correlations(_legs)
 
             _bankroll = int(st.session_state.get('bankroll', 1000))
             _max_exp = int(_bankroll * 0.25)
@@ -2723,8 +2738,8 @@ def render_nfl_app():
                 help=f"25% max daily exposure cap: ${_max_exp}"
             )
 
-            _tiers = _pm.optimize_tiers(_legs, _ladder_budget)
-            _tier_results = _pm.compute_stakes(_tiers, _ladder_budget)
+            _legs_json = json.dumps(_legs, sort_keys=True, default=str)
+            _corr_flags, _tier_results = _cached_ladder_compute(_legs_json, _ladder_budget)
 
             # ── Summary metrics ───────────────────────────────────────
             _n_games = len(set(v.get('game_label', '') for v in _rpl_sels.values()))

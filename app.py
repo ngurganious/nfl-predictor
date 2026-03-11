@@ -52,6 +52,22 @@ if 'edgeiq_sportsbook' not in st.session_state:
 if 'parlay_tray' not in st.session_state:
     st.session_state['parlay_tray'] = []
 
+# ── Parlay tray query-param actions (JS → Python bridge) ─────────────────────
+_tray_clear = st.query_params.get('tray_clear')
+if _tray_clear:
+    st.session_state['parlay_tray'] = []
+    st.query_params.clear()
+    st.rerun()
+
+_tray_remove = st.query_params.get('tray_remove')
+if _tray_remove:
+    st.session_state['parlay_tray'] = [
+        p for p in st.session_state.get('parlay_tray', [])
+        if str(p.get('leg_id', '')) != _tray_remove
+    ]
+    st.query_params.clear()
+    st.rerun()
+
 # ── Sportsbook options (display label → API key) ─────────────────────────────
 _SPORTSBOOK_LABELS = ["DraftKings", "FanDuel", "BetMGM", "Caesars", "PointsBet", "Bovada"]
 
@@ -105,6 +121,8 @@ _SPORTS = [
 
 # ── Top picks collector ──────────────────────────────────────────────────────
 def _collect_top_picks(limit=10):
+    from datetime import datetime, timedelta, timezone
+
     picks = []
 
     # Build flat game lists from schedules for date/time lookup
@@ -115,6 +133,19 @@ def _collect_top_picks(limit=10):
     nfl_games = _flat_games('weekly_schedule')
     nhl_games = _flat_games('nhl_weekly_schedule')
     mlb_games = _flat_games('mlb_weekly_schedule')
+
+    # 48-hour cutoff for filtering props to near-term games only
+    _now = datetime.now(timezone.utc)
+    _cutoff = _now + timedelta(hours=48)
+
+    def _within_48h(games, idx):
+        if 0 <= idx < len(games):
+            dt = games[idx].get('datetime_et')
+            if dt is not None:
+                if dt.tzinfo is None:
+                    return dt.replace(tzinfo=timezone.utc) <= _cutoff
+                return dt <= _cutoff
+        return True  # no datetime → include (NFL ELO-only, etc.)
 
     def _game_time(games, idx):
         if 0 <= idx < len(games):
@@ -128,10 +159,12 @@ def _collect_top_picks(limit=10):
     for k, v in st.session_state.items():
         if k.startswith('g') and k.endswith('_pred') and not k.startswith(('nhl_', 'mlb_')):
             if isinstance(v, dict) and 'final_prob_home' in v:
+                idx = int(k[1:].replace('_pred', '')) if k[1:].replace('_pred', '').isdigit() else -1
+                if not _within_48h(nfl_games, idx):
+                    continue
                 prob = max(v.get('final_prob_home', 0.5), 1 - v.get('final_prob_home', 0.5))
                 winner = v.get('home_team', '?') if v.get('final_prob_home', 0.5) >= 0.5 else v.get('away_team', '?')
                 loser = v.get('away_team', '?') if v.get('final_prob_home', 0.5) >= 0.5 else v.get('home_team', '?')
-                idx = int(k[1:].replace('_pred', '')) if k[1:].replace('_pred', '').isdigit() else -1
                 picks.append({
                     'sport': 'NFL', 'sport_css': 'nfl',
                     'player': f"{winner} vs {loser}",
@@ -147,11 +180,13 @@ def _collect_top_picks(limit=10):
     for k, v in st.session_state.items():
         if k.startswith('nhl_g') and k.endswith('_pred'):
             if isinstance(v, dict) and 'home_win_prob' in v:
+                idx_str = k.replace('nhl_g', '').replace('_pred', '')
+                idx = int(idx_str) if idx_str.isdigit() else -1
+                if not _within_48h(nhl_games, idx):
+                    continue
                 prob = max(v.get('home_win_prob', 0.5), 1 - v.get('home_win_prob', 0.5))
                 winner = v.get('home_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('away_team', '?')
                 loser = v.get('away_team', '?') if v.get('home_win_prob', 0.5) >= 0.5 else v.get('home_team', '?')
-                idx_str = k.replace('nhl_g', '').replace('_pred', '')
-                idx = int(idx_str) if idx_str.isdigit() else -1
                 picks.append({
                     'sport': 'NHL', 'sport_css': 'nhl',
                     'player': f"{winner} vs {loser}",
@@ -186,6 +221,8 @@ def _collect_top_picks(limit=10):
         if k.startswith('nhl_props_g') and isinstance(v, list):
             idx_str = k.replace('nhl_props_g', '')
             idx = int(idx_str) if idx_str.isdigit() else -1
+            if not _within_48h(nhl_games, idx):
+                continue
             gt = _game_time(nhl_games, idx)
             for prop in v:
                 if isinstance(prop, dict) and 'best_prob' in prop:
@@ -226,8 +263,33 @@ def _collect_top_picks(limit=10):
                         'type': 'Prop',
                         'game_time': '',
                     })
+
+    # Sort by probability descending
     picks.sort(key=lambda x: x['prob'], reverse=True)
-    return picks[:limit]
+
+    # Deduplicate: max 1 prop per player, max 3 of any prop type
+    seen_players = set()
+    type_counts = {}
+    filtered = []
+    for p in picks:
+        player = p['player']
+        # Extract prop type (e.g. "Shots", "Goals") — first word of bet for props
+        prop_type = p['bet'].split(' ', 1)[0] if p['type'] == 'Prop' else p['bet']
+
+        # Max 1 entry per player
+        if player in seen_players:
+            continue
+        # Max 3 of any single prop type
+        if type_counts.get(prop_type, 0) >= 3:
+            continue
+
+        seen_players.add(player)
+        type_counts[prop_type] = type_counts.get(prop_type, 0) + 1
+        filtered.append(p)
+        if len(filtered) >= limit:
+            break
+
+    return filtered
 
 def _signal_badge(edge_pct):
     if edge_pct >= 0.04:
@@ -500,8 +562,10 @@ def _render_home():
         st.info("Load a sport schedule to see today's highest probability picks across all sports.")
 
 
-# ── Parlay Tray (floating bottom bar + expanded sheet) ────────────────────────
+# ── Parlay Tray (viewport-fixed bottom bar + expanded sheet via st.markdown) ──
 def _render_parlay_tray():
+    import streamlit.components.v1 as components
+
     tray = st.session_state.get('parlay_tray', [])
     if not tray:
         return
@@ -524,34 +588,306 @@ def _render_parlay_tray():
     else:
         combo_american = f"-{int(round(100 / (combo_dec - 1)))}"
 
-    st.markdown("---")
-    with st.expander(f"🎯 Parlay Tray — {count} leg{'s' if count != 1 else ''} · Combo: {combo_american}", expanded=False):
-        pick_rows = ""
-        for i, p in enumerate(tray):
-            sport_css = p.get('sport_css', 'nfl')
-            odds = p.get('odds', -110)
-            pick_rows += f"""
-            <div class="parlay-tray-pick">
-                <div class="parlay-tray-pick-info">
-                    <span class="parlay-tray-pick-sport {sport_css}">{p.get('sport', 'NFL')}</span>
-                    <span class="parlay-tray-pick-name">{p.get('player', '?')}</span>
-                    <span class="parlay-tray-pick-bet">{p.get('bet', '')}</span>
-                </div>
-                <span class="parlay-tray-pick-odds">{odds:+d}</span>
-            </div>"""
-        st.markdown(f'<div style="margin:8px 0">{pick_rows}</div>', unsafe_allow_html=True)
+    # Build pick rows HTML
+    pick_rows_html = ""
+    for p in tray:
+        sport_css = p.get('sport_css', 'nfl')
+        odds = p.get('odds', -110)
+        leg_id = p.get('leg_id', '')
+        pick_rows_html += f"""
+        <div class="pt-pick">
+            <div class="pt-pick-left">
+                <span class="pt-sport-badge pt-{sport_css}">{p.get('sport', 'NFL')}</span>
+                <span class="pt-pick-name">{p.get('player', '?')}</span>
+                <span class="pt-pick-bet">{p.get('bet', '')}</span>
+            </div>
+            <div class="pt-pick-right">
+                <span class="pt-pick-odds">{odds:+d}</span>
+                <button class="pt-remove-btn" data-leg="{leg_id}" title="Remove">&#10005;</button>
+            </div>
+        </div>"""
 
-        # Remove individual picks
-        _remove_id = None
-        for i, p in enumerate(tray):
-            if st.button(f"✕ Remove {p.get('player', '?')} — {p.get('bet', '')}", key=f"tray_rm_{i}"):
-                _remove_id = p.get('leg_id')
-        if st.button("🗑 Clear All", key="parlay_tray_clear"):
-            st.session_state['parlay_tray'] = []
-            st.rerun()
-        if _remove_id:
-            st.session_state['parlay_tray'] = [p for p in tray if p.get('leg_id') != _remove_id]
-            st.rerun()
+    combo_payout_10 = combo_dec * 10
+
+    # CSS + HTML via st.markdown (renders in main DOM — position:fixed works)
+    tray_css_html = f"""
+<style>
+.pt-bar {{
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000000;
+    background: linear-gradient(180deg, #131c2e 0%, #0d1424 100%);
+    border-top: 1px solid #0e7490;
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+    backdrop-filter: blur(12px);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    font-family: 'Inter', sans-serif;
+}}
+.pt-bar-left {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}}
+.pt-bar-count {{
+    background: #22d3ee;
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 0.85rem;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace;
+}}
+.pt-bar-label {{
+    color: #e2e8f0;
+    font-weight: 600;
+    font-size: 0.9rem;
+}}
+.pt-bar-right {{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}}
+.pt-bar-odds {{
+    color: #22d3ee;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+}}
+.pt-bar-toggle {{
+    color: #94a3b8;
+    font-size: 0.9rem;
+    transition: transform 0.2s;
+}}
+.pt-bar-toggle.open {{
+    transform: rotate(180deg);
+}}
+.pt-sheet {{
+    position: fixed;
+    bottom: 44px;
+    left: 0;
+    right: 0;
+    z-index: 999999;
+    background: #0f172a;
+    border-top: 2px solid #0e7490;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.6);
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 16px 24px 16px;
+    display: none;
+    font-family: 'Inter', sans-serif;
+}}
+.pt-sheet.open {{
+    display: block;
+}}
+.pt-sheet-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e2d45;
+}}
+.pt-sheet-title {{
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.1rem;
+}}
+.pt-sheet-subtitle {{
+    color: #94a3b8;
+    font-size: 0.82rem;
+}}
+.pt-pick {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(30, 45, 69, 0.5);
+}}
+.pt-pick-left {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}}
+.pt-pick-right {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}}
+.pt-sport-badge {{
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+}}
+.pt-nfl {{ background: rgba(34, 197, 94, 0.15); color: #22c55e; }}
+.pt-nhl {{ background: rgba(56, 189, 248, 0.15); color: #38bdf8; }}
+.pt-mlb {{ background: rgba(248, 113, 113, 0.15); color: #f87171; }}
+.pt-pick-name {{
+    color: #e2e8f0;
+    font-weight: 600;
+    font-size: 0.88rem;
+}}
+.pt-pick-bet {{
+    color: #94a3b8;
+    font-size: 0.82rem;
+}}
+.pt-pick-odds {{
+    color: #22d3ee;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.85rem;
+}}
+.pt-remove-btn {{
+    background: none;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}}
+.pt-remove-btn:hover {{
+    color: #ef4444;
+    border-color: #ef4444;
+}}
+.pt-actions {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #1e2d45;
+}}
+.pt-clear-btn {{
+    background: none;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-size: 0.82rem;
+    cursor: pointer;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+}}
+.pt-clear-btn:hover {{
+    color: #ef4444;
+    border-color: #ef4444;
+}}
+.pt-build-btn {{
+    background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+    transition: all 0.15s;
+}}
+.pt-build-btn:hover {{
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
+    transform: translateY(-1px);
+}}
+.pt-spacer {{
+    height: 52px;
+}}
+</style>
+
+<div class="pt-sheet" id="ptSheet">
+    <div class="pt-sheet-header">
+        <div>
+            <div class="pt-sheet-title">Parlay Builder</div>
+            <div class="pt-sheet-subtitle">{count} leg{'s' if count != 1 else ''} &middot; {combo_american} combo &middot; ${combo_payout_10:.2f} on $10</div>
+        </div>
+    </div>
+    <div class="pt-picks">{pick_rows_html}</div>
+    <div class="pt-actions">
+        <button class="pt-clear-btn" id="ptClearBtn">Clear All</button>
+        <button class="pt-build-btn" id="ptBuildBtn">Build Ladder &rarr;</button>
+    </div>
+</div>
+
+<div class="pt-bar" id="ptBar">
+    <div class="pt-bar-left">
+        <span class="pt-bar-count">{count}</span>
+        <span class="pt-bar-label">Parlay Tray</span>
+    </div>
+    <div class="pt-bar-right">
+        <span class="pt-bar-odds">{combo_american}</span>
+        <span class="pt-bar-toggle" id="ptToggleIcon">&#9650;</span>
+    </div>
+</div>
+
+<div class="pt-spacer"></div>
+"""
+    st.markdown(tray_css_html, unsafe_allow_html=True)
+
+    # JS via components.html — runs in a hidden iframe, targets parent DOM
+    tray_js = """
+<script>
+(function() {
+    var parent = window.parent.document;
+    var bar = parent.getElementById('ptBar');
+    var sheet = parent.getElementById('ptSheet');
+    var icon = parent.getElementById('ptToggleIcon');
+    var clearBtn = parent.getElementById('ptClearBtn');
+    var buildBtn = parent.getElementById('ptBuildBtn');
+
+    if (!bar) return;
+
+    var open = false;
+    bar.onclick = function() {
+        open = !open;
+        sheet.classList.toggle('open', open);
+        icon.classList.toggle('open', open);
+    };
+
+    // Remove buttons
+    var rmBtns = parent.querySelectorAll('.pt-remove-btn[data-leg]');
+    rmBtns.forEach(function(btn) {
+        btn.onclick = function(e) {
+            e.stopPropagation();
+            var url = new URL(window.parent.location.href);
+            url.searchParams.set('tray_remove', btn.getAttribute('data-leg'));
+            window.parent.location.href = url.toString();
+        };
+    });
+
+    if (clearBtn) {
+        clearBtn.onclick = function(e) {
+            e.stopPropagation();
+            var url = new URL(window.parent.location.href);
+            url.searchParams.set('tray_clear', '1');
+            window.parent.location.href = url.toString();
+        };
+    }
+
+    if (buildBtn) {
+        buildBtn.onclick = function(e) {
+            e.stopPropagation();
+            open = false;
+            sheet.classList.remove('open');
+            icon.classList.remove('open');
+        };
+    }
+})();
+</script>
+"""
+    components.html(tray_js, height=0, scrolling=False)
 
 
 # ── Router ────────────────────────────────────────────────────────────────────

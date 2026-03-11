@@ -14,6 +14,8 @@ Mirrors the NFL section in final_app.py.
 import os
 import pickle
 import logging
+import time
+import json
 import warnings
 from datetime import datetime, date, timedelta
 
@@ -197,6 +199,15 @@ def load_nhl_prop_backtest(mtime=0.0):
     except Exception:
         return pd.DataFrame()
 
+
+@st.cache_data
+def _cached_nhl_ladder_compute(_legs_json, _budget):
+    import parlay_math as _pm
+    _legs = json.loads(_legs_json)
+    _corr = _pm.check_correlations(_legs)
+    _tiers = _pm.optimize_tiers(_legs, _budget)
+    _results = _pm.compute_stakes(_tiers, _budget)
+    return _corr, _results
 
 @st.cache_data
 def _nhl_ladder_sim(seasons_tuple, mtime=0.0):
@@ -2572,9 +2583,14 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     if st.session_state.get('_nhl_props_game_count') != _n_prop_games:
         st.session_state['nhl_props_precalc_done'] = False
         st.session_state['nhl_props_autosel_done'] = False
+        st.session_state['nhl_props_ts'] = 0
         st.session_state['_nhl_props_game_count'] = _n_prop_games
     _vegas_data = st.session_state.get('nhl_vegas_props', {})
-    if not st.session_state.get('nhl_props_precalc_done'):
+    _props_age = time.time() - st.session_state.get('nhl_props_ts', 0)
+    if _props_age > 300:
+        for _k in list(st.session_state.keys()):
+            if _k.startswith('nhl_props_g'):
+                del st.session_state[_k]
         all_games = [g for games in schedule.values() for g in games]
         with st.spinner("Computing player prop predictions…"):
             for idx, game in enumerate(all_games):
@@ -2588,6 +2604,7 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                         vegas_props=_gv,
                     )
         st.session_state['nhl_props_precalc_done'] = True
+        st.session_state['nhl_props_ts'] = time.time()
 
     # ── Top Picks ──────────────────────────────────────────────────────────────
     all_props_flat = []
@@ -2754,7 +2771,6 @@ def _render_tab_ladder_nhl():
         return
 
     legs = sorted(sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
-    corr_flags = _pm.check_correlations(legs)
 
     bankroll = int(st.session_state.get('nhl_bankroll', 1000))
     max_exp  = max(10, int(bankroll * 0.25))
@@ -2766,8 +2782,8 @@ def _render_tab_ladder_nhl():
         help=f"25% max daily exposure cap: ${max_exp}",
     )
 
-    tiers  = _pm.optimize_tiers(legs, budget)
-    result = _pm.compute_stakes(tiers, budget)
+    _legs_json = json.dumps(legs, sort_keys=True, default=str)
+    corr_flags, result = _cached_nhl_ladder_compute(_legs_json, budget)
 
     max_payout    = sum(t.get('payout', 0) for t in result)
     banker_payout = result[0]['payout'] if result else 0
