@@ -2717,16 +2717,15 @@ def render_nfl_app():
 
         import parlay_math as _pm
 
-        _rpl_sels = st.session_state.get('rpl_selections', {})
+        _tray = st.session_state.get('parlay_tray', [])
 
-        if len(_rpl_sels) < 3:
+        if len(_tray) < 3:
             st.info(
-                f"Select at least **3 legs** from the **Player Props** tab to build a ladder. "
-                f"Currently selected: **{len(_rpl_sels)}** legs."
+                f"Add at least **3** picks from **Props** or **Top Picks** to build your ladder. "
+                f"Currently selected: **{len(_tray)}** legs."
             )
-            st.caption("Go to the Player Props tab → This Week's Props → expand game cards → toggle checkboxes.")
         else:
-            _legs = sorted(_rpl_sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
+            _legs = sorted(_tray, key=lambda l: l.get('confidence', 0), reverse=True)
 
             _bankroll = int(st.session_state.get('bankroll', 1000))
             _max_exp = int(_bankroll * 0.25)
@@ -2742,7 +2741,7 @@ def render_nfl_app():
             _corr_flags, _tier_results = _cached_ladder_compute(_legs_json, _ladder_budget)
 
             # ── Summary metrics ───────────────────────────────────────
-            _n_games = len(set(v.get('game_label', '') for v in _rpl_sels.values()))
+            _n_games = len(set(l.get('game_label', l.get('game', '')) for l in _tray))
             _max_payout = sum(t.get('payout', 0) for t in _tier_results)
             _banker_payout = _tier_results[0]['payout'] if _tier_results else 0
             _be_ok = _banker_payout >= _ladder_budget
@@ -2799,12 +2798,18 @@ def render_nfl_app():
 
                     # Leg details
                     for leg in tier.get('legs', []):
-                        _desc = leg.get('description', '')
+                        _desc = leg.get('description', leg.get('bet', ''))
                         _conf = leg.get('confidence', 0)
                         _edge = leg.get('edge', 0)
                         _badge_cls = 'signal-lock' if _conf >= 0.75 else 'signal-strong' if _conf >= 0.65 else 'signal-lean' if _conf >= 0.55 else 'signal-pass'
+                        _sport_lbl = leg.get('sport', 'NFL')
+                        _sport_css = leg.get('sport_css', 'nfl')
+                        _sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
+                        _sc = _sport_colors.get(_sport_css, '#94a3b8')
+                        _sbadge = (f"<span style='background:{_sc};color:#0f172a;border-radius:4px;"
+                                   f"padding:1px 5px;font-size:0.7em;font-weight:700'>{_sport_lbl}</span> ")
                         l1, l2, l3 = st.columns([4, 2, 2])
-                        l1.write(_desc)
+                        l1.markdown(f"{_sbadge}{_desc}", unsafe_allow_html=True)
                         l2.markdown(f"<span class='signal-badge {_badge_cls}'>Edge {_edge:+.1f}</span>", unsafe_allow_html=True)
                         l3.caption(f"Prob: {_conf*100:.1f}%")
 

@@ -744,7 +744,12 @@ def render_nhl_prediction_result(result: dict, prefix: str = "", game_date: str 
         if _in_tray:
             _nhl_tray_remove(_tray_ml_id)
         else:
-            _nhl_tray_add(_tray_ml_id, _pick_label_k, f"ML {int(_pick_ml_k):+d}", int(_pick_ml_k))
+            _nhl_tray_add({
+                'leg_id': _tray_ml_id, 'sport': 'NHL', 'sport_css': 'nhl',
+                'player': _pick_label_k, 'bet': f"ML {int(_pick_ml_k):+d}",
+                'odds': int(_pick_ml_k), 'game': f"{away} @ {home}",
+                'game_time': '', 'confidence': _pick_prob_k,
+            })
         st.rerun()
 
     # ── Log prediction to history (once per session per game) ────────────────
@@ -2165,10 +2170,11 @@ def _nhl_rpl_remove(leg_id):
     st.session_state['nhl_rpl_selections'] = sels
 
 
-def _nhl_tray_add(leg_id, player, bet, odds):
+def _nhl_tray_add(leg_dict):
     tray = st.session_state.get('parlay_tray', [])
-    if not any(p.get('leg_id') == leg_id for p in tray):
-        tray.append({'leg_id': leg_id, 'sport': 'NHL', 'sport_css': 'nhl', 'player': player, 'bet': bet, 'odds': int(odds)})
+    lid = leg_dict.get('leg_id', '')
+    if not any(p.get('leg_id') == lid for p in tray):
+        tray.append(leg_dict)
         st.session_state['parlay_tray'] = tray
 
 
@@ -2348,18 +2354,63 @@ def _signal_badge(edge_pct):
 
 
 def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False, cb_key_override=None, game_date_label='', game_time_et=''):
+    from utils.parlay_utils import make_leg_id, toggle_pick
+
     name = prop['name']
     team = prop['team']
     pos  = prop['position']
 
-    leg_id = f"nhl_{home}_{away}_{name.replace(' ', '_')}_{prop['best_market']}"
+    leg_id = make_leg_id('nhl', name, prop['best_market'], home, away)
     in_sel = leg_id in sels
-    cb_key = cb_key_override if cb_key_override is not None else f"nhl_rpl_g{game_idx}_{team}_{rank_i}"
+    cb_key = cb_key_override if cb_key_override else f"parlay_pick_{leg_id}"
+
+    _dir = prop.get('best_direction', 'OVER')
+    _odds = prop.get('best_odds', -110)
+    ep = prop.get('best_edge_pct', 0)
+
+    _leg_dict = {
+        'leg_id':           leg_id,
+        'game_id':          f"{away}@{home}",
+        'game_label':       f"{away} @ {home}",
+        'game_date_label':  game_date_label,
+        'game_time_et':     game_time_et,
+        'home_team':        home,
+        'away_team':        away,
+        'bet_type':         'prop',
+        'description':      f"{name} — {prop['best_desc']} {_dir} · Pred {prop['best_pred']:.2f}",
+        'confidence':       prop['best_prob'],
+        'direction':        _dir,
+        'vegas_line':       prop.get('best_line'),
+        'odds':             _odds,
+        'book':             prop.get('best_book'),
+        'market':           prop['best_market'],
+        'player':           name,
+        'prop_type':        prop['best_type'],
+        'model_pred':       prop['best_pred'],
+        'mae':              prop['best_mae'],
+        'edge':             round(ep * 100, 1),
+        'sport':            'NHL',
+        'sport_css':        'nhl',
+        'bet':              f"{prop['best_type']} {_dir}",
+        'game':             f"{away} @ {home}",
+        'game_time':        game_time_et,
+        'pred':             prop['best_pred'],
+    }
+
+    def _on_toggle():
+        toggle_pick(cb_key, _leg_dict)
+        if st.session_state.get(cb_key, False):
+            _nhl_rpl_add(_leg_dict)
+        else:
+            _nhl_rpl_remove(leg_id)
+
+    in_tray = any(l.get('leg_id') == leg_id for l in st.session_state.get('parlay_tray', []))
 
     # Columns: Pick | Player | Prop | Line | Pred | Edge% | Odds | Signal
     cols = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
 
-    checked = cols[0].checkbox("Select", value=in_sel, key=cb_key, label_visibility='collapsed')
+    cols[0].checkbox("Select", value=in_tray, key=cb_key,
+                     on_change=_on_toggle, label_visibility='collapsed')
 
     pos_color = '#22d3ee' if prop['is_forward'] else '#a78bfa'
     prefix = "⭐ " if is_top_pick else ""
@@ -2370,8 +2421,6 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
         unsafe_allow_html=True,
     )
 
-    # Best prop type + direction
-    _dir = prop.get('best_direction', 'OVER')
     _dir_color = '#22c55e' if _dir == 'OVER' else '#ef4444'
     cols[2].markdown(
         f"<span style='color:#f1f5f9'>{prop['best_type']}</span>"
@@ -2379,62 +2428,25 @@ def _render_prop_row(prop, game_idx, home, away, rank_i, sels, is_top_pick=False
         unsafe_allow_html=True,
     )
 
-    # Line (from sportsbook or "Model Only")
     if prop.get('best_has_line'):
         cols[3].markdown(f"<span style='color:#f1f5f9;font-weight:600'>{prop['best_line']}</span>", unsafe_allow_html=True)
     else:
         cols[3].markdown("<span style='color:#64748b;font-size:0.78em'>No line</span>", unsafe_allow_html=True)
 
-    # Prediction
     cols[4].markdown(f"<span style='color:#f1f5f9'>{prop['best_pred']:.2f}</span>", unsafe_allow_html=True)
 
-    # Edge %
-    ep = prop.get('best_edge_pct', 0)
     ep_color = '#22c55e' if ep >= 0.02 else '#eab308' if ep >= 0.01 else '#94a3b8'
     if prop.get('best_has_line'):
         cols[5].markdown(f"<span style='color:{ep_color};font-weight:600'>{ep*100:.1f}%</span>", unsafe_allow_html=True)
     else:
         cols[5].markdown("<span style='color:#64748b;font-size:0.78em'>—</span>", unsafe_allow_html=True)
 
-    # Odds
-    _odds = prop.get('best_odds', -110)
     cols[6].markdown(f"<span style='color:#cbd5e1'>{_odds:+d}</span>", unsafe_allow_html=True)
 
-    # Signal badge
     if prop.get('best_has_line'):
         cols[7].markdown(_signal_badge(ep), unsafe_allow_html=True)
     else:
         cols[7].markdown("<span style='color:#64748b;font-size:0.78em'>Model</span>", unsafe_allow_html=True)
-
-    if checked and not in_sel:
-        _nhl_rpl_add({
-            'leg_id':           leg_id,
-            'game_id':          f"{away}@{home}",
-            'game_label':       f"{away} @ {home}",
-            'game_date_label':  game_date_label,
-            'game_time_et':     game_time_et,
-            'home_team':        home,
-            'away_team':        away,
-            'bet_type':         'prop',
-            'description':      f"{name} — {prop['best_desc']} {_dir} · Pred {prop['best_pred']:.2f}",
-            'confidence':       prop['best_prob'],
-            'direction':        _dir,
-            'vegas_line':       prop.get('best_line'),
-            'odds':             _odds,
-            'book':             prop.get('best_book'),
-            'market':           prop['best_market'],
-            'player':           name,
-            'prop_type':        prop['best_type'],
-            'model_pred':       prop['best_pred'],
-            'mae':              prop['best_mae'],
-            'edge':             round(ep * 100, 1),
-        })
-        _nhl_tray_add(leg_id, name, f"{prop['best_type']} {_dir}", _odds)
-        st.rerun()
-    elif not checked and in_sel:
-        _nhl_rpl_remove(leg_id)
-        _nhl_tray_remove(leg_id)
-        st.rerun()
 
 
 def _render_tab_props(player_models, skater_stats, team_stats):
@@ -2486,7 +2498,8 @@ def _render_tab_props(player_models, skater_stats, team_stats):
         )
 
     sels = st.session_state.get('nhl_rpl_selections', {})
-    n_sels = len(sels)
+    _tray = st.session_state.get('parlay_tray', [])
+    n_tray = len(_tray)
 
     hdr_col, ctr_col = st.columns([4, 2])
     with hdr_col:
@@ -2498,19 +2511,20 @@ def _render_tab_props(player_models, skater_stats, team_stats):
             "Model-only predictions  ·  Fetch prop lines below for edge analysis  ·  Today & tomorrow"
         )
     with ctr_col:
-        if n_sels > 0:
-            badge_color = '#22c55e' if n_sels >= 3 else '#eab308'
+        if n_tray > 0:
+            badge_color = '#22c55e' if n_tray >= 3 else '#eab308'
             st.markdown(
                 f"<div style='background:{badge_color};color:#0f172a;border-radius:8px;"
                 f"padding:8px 14px;text-align:center;font-weight:700;font-size:0.95em;"
-                f"margin-top:8px'>✅ {n_sels} leg{'s' if n_sels != 1 else ''} selected</div>",
+                f"margin-top:8px'>✅ {n_tray} leg{'s' if n_tray != 1 else ''} in tray</div>",
                 unsafe_allow_html=True,
             )
             if st.button("Clear All", key='nhl_rpl_clear', use_container_width=True):
                 st.session_state['nhl_rpl_selections'] = {}
+                st.session_state['parlay_tray'] = []
                 st.rerun()
 
-    if n_sels >= 3:
+    if n_tray >= 3:
         st.success("🪜 **3+ legs selected** — head to the **Parlay Ladder** tab to build your ladder.")
 
     # ── Fetch Prop Lines button ───────────────────────────────────────────────
@@ -2622,41 +2636,11 @@ def _render_tab_props(player_models, skater_stats, team_stats):
     else:
         top_picks = sorted(all_props_flat, key=lambda x: x[2]['best_prob'], reverse=True)[:10]
 
-    # Auto-select top 10 on first load
-    if not st.session_state.get('nhl_props_autosel_done') and top_picks:
-        for _gidx, _game_t, _prop_t in top_picks:
-            _name = _prop_t['name']
-            _home = _game_t['home_team']
-            _away = _game_t['away_team']
-            _lid = f"nhl_{_home}_{_away}_{_name.replace(' ', '_')}_{_prop_t['best_market']}"
-            _dir = _prop_t.get('best_direction', 'OVER')
-            _nhl_rpl_add({
-                'leg_id':           _lid,
-                'game_id':          f"{_away}@{_home}",
-                'game_label':       f"{_away} @ {_home}",
-                'game_date_label':  _game_t.get('game_date_label', ''),
-                'game_time_et':     _game_t.get('game_time_et', ''),
-                'home_team':        _home,
-                'away_team':        _away,
-                'bet_type':         'prop',
-                'description':      f"{_name} — {_prop_t['best_desc']} {_dir} · Pred {_prop_t['best_pred']:.2f}",
-                'confidence':       _prop_t['best_prob'],
-                'direction':        _dir,
-                'vegas_line':       _prop_t.get('best_line'),
-                'odds':             _prop_t.get('best_odds', -110),
-                'book':             _prop_t.get('best_book'),
-                'market':           _prop_t['best_market'],
-                'player':           _name,
-                'prop_type':        _prop_t['best_type'],
-                'model_pred':       _prop_t['best_pred'],
-                'mae':              _prop_t['best_mae'],
-                'edge':             round(_prop_t.get('best_edge_pct', 0) * 100, 1),
-            })
-        st.session_state['nhl_props_autosel_done'] = True
-        st.rerun()
+    # (Auto-select removed — all checkboxes default to unchecked)
 
+    from utils.parlay_utils import make_leg_id as _make_lid
     top_pick_leg_ids = {
-        f"nhl_{g['home_team']}_{g['away_team']}_{p['name'].replace(' ', '_')}_{p['best_market']}"
+        _make_lid('nhl', p['name'], p['best_market'], g['home_team'], g['away_team'])
         for _, g, p in top_picks
     }
 
@@ -2740,7 +2724,7 @@ def _render_tab_props(player_models, skater_stats, team_stats):
             if home_props:
                 st.caption(f"**{NHL_TEAM_NAMES.get(home, home)} (Home)**")
                 for ri, prop in enumerate(home_props):
-                    lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                    lid = _make_lid('nhl', prop['name'], prop['best_market'], home, away)
                     _render_prop_row(prop, game_idx, home, away, ri, sels,
                                      is_top_pick=(lid in top_pick_leg_ids),
                                      game_date_label=date_lbl, game_time_et=time_et)
@@ -2749,7 +2733,7 @@ def _render_tab_props(player_models, skater_stats, team_stats):
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.caption(f"**{NHL_TEAM_NAMES.get(away, away)} (Away)**")
                 for ri, prop in enumerate(away_props):
-                    lid = f"nhl_{home}_{away}_{prop['name'].replace(' ', '_')}_{prop['best_market']}"
+                    lid = _make_lid('nhl', prop['name'], prop['best_market'], home, away)
                     _render_prop_row(prop, game_idx, home, away, ri + 20, sels,
                                      is_top_pick=(lid in top_pick_leg_ids),
                                      game_date_label=date_lbl, game_time_et=time_et)
@@ -2760,17 +2744,16 @@ def _render_tab_ladder_nhl():
 
     import parlay_math as _pm
 
-    sels = st.session_state.get('nhl_rpl_selections', {})
+    tray = st.session_state.get('parlay_tray', [])
 
-    if len(sels) < 3:
+    if len(tray) < 3:
         st.info(
-            f"Select at least **3 legs** from the **Player Props** tab to build a ladder. "
-            f"Currently selected: **{len(sels)}** legs."
+            f"Add at least **3** picks from **Props** or **Top Picks** to build your ladder. "
+            f"Currently selected: **{len(tray)}** legs."
         )
-        st.caption("Go to Player Props → expand game cards → check player rows.")
         return
 
-    legs = sorted(sels.values(), key=lambda l: l.get('confidence', 0), reverse=True)
+    legs = sorted(tray, key=lambda l: l.get('confidence', 0), reverse=True)
 
     bankroll = int(st.session_state.get('nhl_bankroll', 1000))
     max_exp  = max(10, int(bankroll * 0.25))
@@ -2857,9 +2840,15 @@ def _render_tab_ladder_nhl():
                 _dt_str = f"  ·  {gdate}  {gtime}".rstrip() if (gdate or gtime) else ""
                 pred_str = (f"Pred: {pred:.2f} {ptype.lower()}  ·  MAE ±{mae:.2f}"
                             if pred is not None and ptype else "")
+                _sport_lbl = leg.get('sport', 'NHL')
+                _sport_css = leg.get('sport_css', 'nhl')
+                _sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
+                _sc = _sport_colors.get(_sport_css, '#94a3b8')
+                _sport_badge = (f"<span style='background:{_sc};color:#0f172a;border-radius:4px;"
+                                f"padding:1px 5px;font-size:0.7em;font-weight:700'>{_sport_lbl}</span> ")
                 l1, l2, l3 = st.columns([4, 2, 2])
                 l1.markdown(
-                    f"{leg.get('description', '')}"
+                    f"{_sport_badge}{leg.get('description', leg.get('bet', ''))}"
                     f"<br><span style='color:#64748b;font-size:0.78em'>{glabel}"
                     f"{_dt_str}"
                     f"{('  ·  ' + pred_str) if pred_str else ''}</span>",

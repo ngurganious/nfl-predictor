@@ -68,6 +68,18 @@ if _tray_remove:
     st.query_params.clear()
     st.rerun()
 
+_tray_build = st.query_params.get('tray_build')
+if _tray_build:
+    tray = st.session_state.get('parlay_tray', [])
+    if tray:
+        from collections import Counter
+        _sport_counts = Counter(l.get('sport_css', 'nhl') for l in tray)
+        _majority_sport = _sport_counts.most_common(1)[0][0]
+        st.session_state['sport'] = _majority_sport
+        st.session_state['ladder_from_tray'] = True
+    st.query_params.clear()
+    st.rerun()
+
 # ── Sportsbook options (display label → API key) ─────────────────────────────
 _SPORTSBOOK_LABELS = ["DraftKings", "FanDuel", "BetMGM", "Caesars", "PointsBet", "Bovada"]
 
@@ -224,6 +236,9 @@ def _collect_top_picks(limit=10):
             if not _within_48h(nhl_games, idx):
                 continue
             gt = _game_time(nhl_games, idx)
+            _g = nhl_games[idx] if 0 <= idx < len(nhl_games) else {}
+            _h = _g.get('home_team', '')
+            _a = _g.get('away_team', '')
             for prop in v:
                 if isinstance(prop, dict) and 'best_prob' in prop:
                     picks.append({
@@ -241,6 +256,17 @@ def _collect_top_picks(limit=10):
                         'has_line': prop.get('best_has_line', False),
                         'type': 'Prop',
                         'game_time': gt,
+                        'home_team': _h,
+                        'away_team': _a,
+                        'best_market': prop.get('best_market', ''),
+                        'best_type': prop.get('best_type', ''),
+                        'best_direction': prop.get('best_direction', 'OVER'),
+                        'best_pred': prop.get('best_pred', 0),
+                        'best_desc': prop.get('best_desc', ''),
+                        'best_prob': prop.get('best_prob', 0),
+                        'best_mae': prop.get('best_mae', 0),
+                        'best_edge_pct': prop.get('best_edge_pct', 0),
+                        'best_book': prop.get('best_book'),
                     })
     # MLB player props (list of dicts from _compute_game_props)
     for k, v in st.session_state.items():
@@ -495,9 +521,30 @@ def _render_home():
         hc[6].caption("Odds")
         hc[7].caption("Signal")
         st.markdown("<hr style='margin:2px 0 6px'>", unsafe_allow_html=True)
+        from utils.parlay_utils import make_leg_id, toggle_pick
+
         for ti, p in enumerate(picks):
+            _sport = p['sport_css']
+            if p['type'] == 'Prop' and p.get('home_team'):
+                lid = make_leg_id(_sport, p['player'], p.get('best_market', p['bet']), p['home_team'], p['away_team'])
+            else:
+                lid = make_leg_id(_sport, p['player'], p['bet'], p.get('home_team', ''), p.get('away_team', ''))
+            cb_key = f"parlay_pick_{lid}"
+            in_tray = any(x.get('leg_id') == lid for x in st.session_state.get('parlay_tray', []))
+            _dir = p.get('best_direction', 'OVER')
+            _leg = {
+                'leg_id': lid, 'sport': p['sport'].upper(), 'sport_css': _sport,
+                'player': p['player'], 'bet': p['bet'], 'odds': int(p.get('odds', -110)),
+                'game': f"{p.get('away_team', '')} @ {p.get('home_team', '')}",
+                'game_time': p.get('game_time', ''),
+                'prop_type': p.get('best_type', p['bet']),
+                'pred': p.get('best_pred', p.get('pred', 0)),
+                'edge': round(p.get('best_edge_pct', p.get('edge_pct', 0)) * 100, 1),
+                'confidence': p.get('best_prob', p.get('prob', 0)),
+            }
             cols = st.columns([0.4, 2.2, 1.2, 0.8, 0.8, 0.9, 0.8, 0.9])
-            cols[0].checkbox("Select", value=False, key=f"home_tp_{ti}", label_visibility='collapsed')
+            cols[0].checkbox("Select", value=in_tray, key=cb_key,
+                             on_change=toggle_pick, args=(cb_key, _leg), label_visibility='collapsed')
             # Player + sport badge + position badge + team
             sport_colors = {'nfl': '#22c55e', 'nhl': '#38bdf8', 'mlb': '#f87171'}
             sc = sport_colors.get(p['sport_css'], '#94a3b8')
@@ -564,12 +611,7 @@ def _render_home():
 
 # ── Parlay Tray (viewport-fixed bottom bar + expanded sheet via st.markdown) ──
 def _render_parlay_tray():
-    import streamlit.components.v1 as components
-
     tray = st.session_state.get('parlay_tray', [])
-    if not tray:
-        return
-
     count = len(tray)
 
     def _combined_decimal(picks):
@@ -582,11 +624,15 @@ def _render_parlay_tray():
                 dec *= 1 + 100 / abs(odds)
         return dec
 
-    combo_dec = _combined_decimal(tray)
-    if combo_dec >= 2.0:
-        combo_american = f"+{int(round((combo_dec - 1) * 100))}"
+    if tray:
+        combo_dec = _combined_decimal(tray)
+        if combo_dec >= 2.0:
+            combo_american = f"+{int(round((combo_dec - 1) * 100))}"
+        else:
+            combo_american = f"-{int(round(100 / (combo_dec - 1)))}"
     else:
-        combo_american = f"-{int(round(100 / (combo_dec - 1)))}"
+        combo_dec = 1.0
+        combo_american = "—"
 
     # Build pick rows HTML
     pick_rows_html = ""
@@ -805,6 +851,15 @@ def _render_parlay_tray():
 .pt-spacer {{
     height: 52px;
 }}
+.pt-toggle-disabled {{
+    opacity: 0.35;
+    pointer-events: none;
+}}
+.pt-build-disabled {{
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}}
 </style>
 
 <div class="pt-sheet" id="ptSheet">
@@ -817,18 +872,18 @@ def _render_parlay_tray():
     <div class="pt-picks">{pick_rows_html}</div>
     <div class="pt-actions">
         <button class="pt-clear-btn" id="ptClearBtn">Clear All</button>
-        <button class="pt-build-btn" id="ptBuildBtn">Build Ladder &rarr;</button>
+        <button class="pt-build-btn{' pt-build-disabled' if count < 3 else ''}" id="ptBuildBtn" {'disabled' if count < 3 else ''}>Build Ladder &rarr;</button>
     </div>
 </div>
 
 <div class="pt-bar" id="ptBar">
     <div class="pt-bar-left">
-        <span class="pt-bar-count">{count}</span>
-        <span class="pt-bar-label">Parlay Tray</span>
+        <span class="pt-bar-count">{'🎯 ' + str(count)}</span>
+        <span class="pt-bar-label">{'Add picks to build a parlay' if count == 0 else 'Parlay Tray'}</span>
     </div>
     <div class="pt-bar-right">
-        <span class="pt-bar-odds">{combo_american}</span>
-        <span class="pt-bar-toggle" id="ptToggleIcon">&#9650;</span>
+        <span class="pt-bar-odds">{combo_american if count > 0 else ''}</span>
+        <span class="pt-bar-toggle{' pt-toggle-disabled' if count == 0 else ''}" id="ptToggleIcon">&#9650;</span>
     </div>
 </div>
 
@@ -836,55 +891,67 @@ def _render_parlay_tray():
 """
     st.markdown(tray_css_html, unsafe_allow_html=True)
 
-    # JS via components.html — runs in a hidden iframe, targets parent DOM
-    tray_js = """
+    # JS via components.html — runs in iframe, targets parent DOM
+    # Uses retrying interval to handle Streamlit DOM timing
+    import streamlit.components.v1 as components
+    tray_js = f"""
 <script>
-(function() {
-    var parent = window.parent.document;
-    var bar = parent.getElementById('ptBar');
-    var sheet = parent.getElementById('ptSheet');
-    var icon = parent.getElementById('ptToggleIcon');
-    var clearBtn = parent.getElementById('ptClearBtn');
-    var buildBtn = parent.getElementById('ptBuildBtn');
+(function() {{
+    function bind() {{
+        var doc = window.parent.document;
+        var bar = doc.getElementById('ptBar');
+        var sheet = doc.getElementById('ptSheet');
+        var icon = doc.getElementById('ptToggleIcon');
+        if (!bar || !sheet) return false;
 
-    if (!bar) return;
+        var clearBtn = doc.getElementById('ptClearBtn');
+        var buildBtn = doc.getElementById('ptBuildBtn');
 
-    var open = false;
-    bar.onclick = function() {
-        open = !open;
-        sheet.classList.toggle('open', open);
-        icon.classList.toggle('open', open);
-    };
+        var open = false;
+        bar.onclick = function() {{
+            if ({count} === 0) return;
+            open = !open;
+            sheet.classList.toggle('open', open);
+            icon.classList.toggle('open', open);
+        }};
 
-    // Remove buttons
-    var rmBtns = parent.querySelectorAll('.pt-remove-btn[data-leg]');
-    rmBtns.forEach(function(btn) {
-        btn.onclick = function(e) {
-            e.stopPropagation();
-            var url = new URL(window.parent.location.href);
-            url.searchParams.set('tray_remove', btn.getAttribute('data-leg'));
-            window.parent.location.href = url.toString();
-        };
-    });
+        var rmBtns = doc.querySelectorAll('.pt-remove-btn[data-leg]');
+        rmBtns.forEach(function(btn) {{
+            btn.onclick = function(e) {{
+                e.stopPropagation();
+                var url = new URL(window.parent.location.href);
+                url.searchParams.set('tray_remove', btn.getAttribute('data-leg'));
+                window.parent.location.href = url.toString();
+            }};
+        }});
 
-    if (clearBtn) {
-        clearBtn.onclick = function(e) {
-            e.stopPropagation();
-            var url = new URL(window.parent.location.href);
-            url.searchParams.set('tray_clear', '1');
-            window.parent.location.href = url.toString();
-        };
-    }
+        if (clearBtn) {{
+            clearBtn.onclick = function(e) {{
+                e.stopPropagation();
+                var url = new URL(window.parent.location.href);
+                url.searchParams.set('tray_clear', '1');
+                window.parent.location.href = url.toString();
+            }};
+        }}
 
-    if (buildBtn) {
-        buildBtn.onclick = function(e) {
-            e.stopPropagation();
-            open = false;
-            sheet.classList.remove('open');
-            icon.classList.remove('open');
-        };
-    }
-})();
+        if (buildBtn) {{
+            buildBtn.onclick = function(e) {{
+                e.stopPropagation();
+                var url = new URL(window.parent.location.href);
+                url.searchParams.set('tray_build', '1');
+                window.parent.location.href = url.toString();
+            }};
+        }}
+        return true;
+    }}
+
+    if (!bind()) {{
+        var attempts = 0;
+        var iv = setInterval(function() {{
+            if (bind() || ++attempts > 20) clearInterval(iv);
+        }}, 100);
+    }}
+}})();
 </script>
 """
     components.html(tray_js, height=0, scrolling=False)
